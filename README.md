@@ -51,30 +51,45 @@ and only reports what it can back up with request/response evidence.
 ```bash
 git clone <this-repo>
 cd api-attack-tester
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-pip install -e .
+./setup.sh
 ```
+
+That's the whole install: it creates a `.venv`, installs pinned dependencies, and verifies
+the `apiattack` CLI runs. (Kali/Debian users: if `python3-venv` is missing, `setup.sh` will
+offer to install it via `apt` for you.)
 
 ### 1. Try it against the included vulnerable lab
 
+The fastest path - one command starts the lab, generates role tokens, and runs a full scan:
+
 ```bash
-# start the lab
+make lab-scan
+```
+
+Open `./report/report.html` (or `report.md`). A pre-generated example lives at
+[`examples/sample-report/report.md`](examples/sample-report/report.md).
+
+Other useful `make` targets: `make lab` (start lab only), `make lab-stop`, `make test`,
+`make docker-demo` (same thing via Docker), `make clean` (reset everything). Run `make help`
+for the full list.
+
+<details>
+<summary>Prefer to run it manually instead of via <code>make</code>?</summary>
+
+```bash
+source .venv/bin/activate
 cd lab && python app.py &
 cd ..
-
-# log in as each seeded identity and generate a ready-to-use roles config
 python3 scripts/generate_lab_config.py http://localhost:8000
-
-# run the scan
 apiattack scan \
   --spec examples/openapi_lab.yaml \
   --config examples/roles_lab.yaml \
   --out ./report \
   --yes-i-am-authorized
 ```
+</details>
 
-Or, with Docker:
+Or, with Docker only (no local Python needed):
 
 ```bash
 ./scripts/run_demo.sh
@@ -86,6 +101,7 @@ Open `./report/report.html` (or `report.md`). A pre-generated example lives at
 ### 2. Point it at your own API
 
 ```bash
+source .venv/bin/activate
 apiattack init-config --out roles.yaml   # scaffold a config
 # edit roles.yaml: base_url, role tokens, owned_resources, endpoint_role_requirements, workflows
 apiattack inspect-spec --spec your-openapi.yaml   # sanity-check what will be tested
