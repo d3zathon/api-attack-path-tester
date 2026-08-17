@@ -1,0 +1,95 @@
+# API Attack-Path & Authorization Test Report
+
+**Target:** `{{ result.target }}`
+**Roles tested:** {{ result.roles_tested | join(", ") }}
+**Endpoints discovered / in scope:** {{ result.endpoints_discovered }} / {{ result.endpoints_tested }}
+**Candidate findings before verification:** {{ result.raw_candidate_count }}
+**Confirmed findings:** {{ confirmed | length }} / {{ findings | length }} total flagged
+
+---
+
+## Executive Summary
+
+This report covers automated authorization-focused testing of the target API, including
+Broken Object Level Authorization (BOLA/IDOR), Broken Function Level Authorization (BFLA),
+privilege escalation via mass assignment, parameter tampering, and business-logic/workflow
+abuse. Every finding below went through an explicit verification pass; findings that could
+not be independently reproduced or corroborated are labeled **unverified** rather than
+discarded silently, so nothing is hidden but nothing is overstated either.
+
+{% if result.attack_paths %}
+## Attack Paths
+
+{% for ap in result.attack_paths %}
+### {{ ap.title }}  `[{{ ap.severity.value | upper }}]`
+
+**Starting role:** {{ ap.starting_role }}
+**Impact:** {{ ap.impact }}
+
+{% for step in ap.steps %}
+{{ loop.index }}. {{ step.description }} _(finding {{ step.finding_id }})_
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+## Findings
+
+{% for f in findings %}
+### [{{ f.severity.value | upper }}] {{ f.title }}
+
+- **ID:** `{{ f.id }}`
+- **Class:** {{ f.vuln_class.value }} ({{ f.owasp_api_id or "n/a" }}, {{ f.cwe or "n/a" }})
+- **Endpoint:** `{{ f.endpoint }}`
+- **Actor role:** {{ f.actor_role }}{% if f.victim_role %} | **Victim role:** {{ f.victim_role }}{% endif %}
+
+- **Status:** {{ "CONFIRMED" if f.confirmed else "UNVERIFIED (not counted as confirmed)" }} — confidence: `{{ f.confidence }}`
+
+**Description**
+
+{{ f.description }}
+
+{% if f.verification_notes %}
+**Verification notes**
+{% for note in f.verification_notes %}
+- {{ note }}
+{% endfor %}
+{% endif %}
+
+**Remediation**
+
+{{ f.remediation }}
+
+<details>
+<summary>Evidence ({{ f.evidence | length }} request/response pair(s))</summary>
+
+{% for ev in f.evidence %}
+```
+[{{ loop.index }}] {{ ev.description }}
+{{ ev.method }} {{ ev.url }}
+Status: {{ ev.status_code }}  ({{ ev.elapsed_ms }} ms)
+Request body: {{ ev.request_body }}
+Response excerpt:
+{{ ev.response_body_excerpt }}
+```
+{% endfor %}
+
+</details>
+
+---
+{% endfor %}
+
+## Methodology
+
+1. **Discovery** — parse the provided OpenAPI spec into a normalized endpoint inventory.
+2. **Probing** — for each check class (BOLA, BFLA, privilege escalation, parameter
+   tampering, business logic), issue cross-role requests designed to surface authorization
+   boundary violations, capturing full request/response evidence for every call.
+3. **Verification** — re-test candidates for reproducibility, inspect response content
+   (not just status codes) for genuine evidence of unauthorized access/mutation, and drop
+   or downgrade anything that doesn't hold up.
+4. **Attack-path correlation** — chain confirmed findings that compound into greater impact
+   (e.g. self-escalation followed by restricted-function access).
+5. **Reporting** — this document.
+
+_This tool is intended for use only against systems you are explicitly authorized to test._

@@ -1,0 +1,1046 @@
+{
+  "target": "http://localhost:8000",
+  "started_at": 1786939278.1718113,
+  "finished_at": 1786939282.1948192,
+  "roles_tested": [
+    "attacker_low_priv",
+    "victim_user",
+    "admin"
+  ],
+  "endpoints_discovered": 13,
+  "endpoints_tested": 13,
+  "findings": [
+    {
+      "id": "F-897cba07",
+      "vuln_class": "BOLA/IDOR",
+      "severity": "high",
+      "endpoint": "GET /users/{user_id}",
+      "title": "Possible BOLA/IDOR on GET /users/{user_id}",
+      "description": "Role 'victim_user' received a 200 response when requesting resource '2' (user_id) owned by role 'attacker_low_priv'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.",
+      "actor_role": "victim_user",
+      "victim_role": "attacker_low_priv",
+      "confirmed": true,
+      "confidence": "verified-high-confidence",
+      "verification_notes": [
+        "Response body contained an identity marker belonging to the victim role, directly confirming cross-account data disclosure."
+      ],
+      "evidence": [
+        {
+          "description": "Baseline: attacker_low_priv accesses own resource 2",
+          "method": "GET",
+          "url": "http://localhost:8000/users/2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:18 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "67",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":10,\"email\":\"attacker@example.com\",\"id\":2,\"role\":\"user\"}\n",
+          "elapsed_ms": 3.29,
+          "timestamp": 1786939278.1757865
+        },
+        {
+          "description": "BOLA probe: victim_user attempts attacker_low_priv's resource 2",
+          "method": "GET",
+          "url": "http://localhost:8000/users/2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:18 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "67",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":10,\"email\":\"attacker@example.com\",\"id\":2,\"role\":\"user\"}\n",
+          "elapsed_ms": 2.8,
+          "timestamp": 1786939278.2787838
+        },
+        {
+          "description": "Verification re-check for F-897cba07",
+          "method": "GET",
+          "url": "http://localhost:8000/users/2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "72",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":999999,\"email\":\"attacker@example.com\",\"id\":2,\"role\":\"admin\"}\n",
+          "elapsed_ms": 2.73,
+          "timestamp": 1786939281.4697437
+        }
+      ],
+      "remediation": "Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.",
+      "cwe": "CWE-639",
+      "owasp_api_id": "API1:2023",
+      "tags": [
+        "bola",
+        "idor",
+        "get"
+      ]
+    },
+    {
+      "id": "F-75298985",
+      "vuln_class": "BOLA/IDOR",
+      "severity": "high",
+      "endpoint": "GET /users/{user_id}",
+      "title": "Possible BOLA/IDOR on GET /users/{user_id}",
+      "description": "Role 'attacker_low_priv' received a 200 response when requesting resource '1' (user_id) owned by role 'victim_user'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": "victim_user",
+      "confirmed": true,
+      "confidence": "verified-high-confidence",
+      "verification_notes": [
+        "Response body contained an identity marker belonging to the victim role, directly confirming cross-account data disclosure."
+      ],
+      "evidence": [
+        {
+          "description": "Baseline: victim_user accesses own resource 1",
+          "method": "GET",
+          "url": "http://localhost:8000/users/1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:18 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "65",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":50,\"email\":\"victim@example.com\",\"id\":1,\"role\":\"user\"}\n",
+          "elapsed_ms": 2.61,
+          "timestamp": 1786939278.381532
+        },
+        {
+          "description": "BOLA probe: attacker_low_priv attempts victim_user's resource 1",
+          "method": "GET",
+          "url": "http://localhost:8000/users/1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:18 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "65",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":50,\"email\":\"victim@example.com\",\"id\":1,\"role\":\"user\"}\n",
+          "elapsed_ms": 2.66,
+          "timestamp": 1786939278.4843848
+        },
+        {
+          "description": "Verification re-check for F-75298985",
+          "method": "GET",
+          "url": "http://localhost:8000/users/1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "65",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":50,\"email\":\"victim@example.com\",\"id\":1,\"role\":\"user\"}\n",
+          "elapsed_ms": 2.86,
+          "timestamp": 1786939281.5727975
+        }
+      ],
+      "remediation": "Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.",
+      "cwe": "CWE-639",
+      "owasp_api_id": "API1:2023",
+      "tags": [
+        "bola",
+        "idor",
+        "get"
+      ]
+    },
+    {
+      "id": "F-712eee5c",
+      "vuln_class": "BOLA/IDOR",
+      "severity": "high",
+      "endpoint": "GET /orders/{order_id}",
+      "title": "Possible BOLA/IDOR on GET /orders/{order_id}",
+      "description": "Role 'victim_user' received a 200 response when requesting resource 'ord_2' (order_id) owned by role 'attacker_low_priv'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.",
+      "actor_role": "victim_user",
+      "victim_role": "attacker_low_priv",
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further."
+      ],
+      "evidence": [
+        {
+          "description": "Baseline: attacker_low_priv accesses own resource ord_2",
+          "method": "GET",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:19 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "77",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":80,\"status\":\"placed\"}\n",
+          "elapsed_ms": 2.61,
+          "timestamp": 1786939279.4104257
+        },
+        {
+          "description": "BOLA probe: victim_user attempts attacker_low_priv's resource ord_2",
+          "method": "GET",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:19 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "77",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":80,\"status\":\"placed\"}\n",
+          "elapsed_ms": 2.57,
+          "timestamp": 1786939279.513192
+        },
+        {
+          "description": "Verification re-check for F-712eee5c",
+          "method": "GET",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "81",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":0.01,\"status\":\"approved\"}\n",
+          "elapsed_ms": 3.0,
+          "timestamp": 1786939281.6759746
+        }
+      ],
+      "remediation": "Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.",
+      "cwe": "CWE-639",
+      "owasp_api_id": "API1:2023",
+      "tags": [
+        "bola",
+        "idor",
+        "get"
+      ]
+    },
+    {
+      "id": "F-ff2ab737",
+      "vuln_class": "BOLA/IDOR",
+      "severity": "high",
+      "endpoint": "GET /orders/{order_id}",
+      "title": "Possible BOLA/IDOR on GET /orders/{order_id}",
+      "description": "Role 'attacker_low_priv' received a 200 response when requesting resource 'ord_1' (order_id) owned by role 'victim_user'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": "victim_user",
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further."
+      ],
+      "evidence": [
+        {
+          "description": "Baseline: victim_user accesses own resource ord_1",
+          "method": "GET",
+          "url": "http://localhost:8000/orders/ord_1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:19 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "75",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_1\",\"item\":\"Laptop\",\"owner_id\":1,\"price\":1200,\"status\":\"placed\"}\n",
+          "elapsed_ms": 2.56,
+          "timestamp": 1786939279.6159608
+        },
+        {
+          "description": "BOLA probe: attacker_low_priv attempts victim_user's resource ord_1",
+          "method": "GET",
+          "url": "http://localhost:8000/orders/ord_1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:19 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "75",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_1\",\"item\":\"Laptop\",\"owner_id\":1,\"price\":1200,\"status\":\"placed\"}\n",
+          "elapsed_ms": 2.44,
+          "timestamp": 1786939279.7185724
+        },
+        {
+          "description": "Verification re-check for F-ff2ab737",
+          "method": "GET",
+          "url": "http://localhost:8000/orders/ord_1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "77",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_1\",\"item\":\"Laptop\",\"owner_id\":1,\"price\":1,\"status\":\"probe-value\"}\n",
+          "elapsed_ms": 2.68,
+          "timestamp": 1786939281.7808313
+        }
+      ],
+      "remediation": "Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.",
+      "cwe": "CWE-639",
+      "owasp_api_id": "API1:2023",
+      "tags": [
+        "bola",
+        "idor",
+        "get"
+      ]
+    },
+    {
+      "id": "F-3279ecfb",
+      "vuln_class": "BOLA/IDOR",
+      "severity": "high",
+      "endpoint": "PATCH /orders/{order_id}",
+      "title": "Possible BOLA/IDOR on PATCH /orders/{order_id}",
+      "description": "Role 'victim_user' received a 200 response when requesting resource 'ord_2' (order_id) owned by role 'attacker_low_priv'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.",
+      "actor_role": "victim_user",
+      "victim_role": "attacker_low_priv",
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further."
+      ],
+      "evidence": [
+        {
+          "description": "Baseline: attacker_low_priv accesses own resource ord_2",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:19 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "77",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":80,\"status\":\"placed\"}\n",
+          "elapsed_ms": 2.84,
+          "timestamp": 1786939279.8215723
+        },
+        {
+          "description": "BOLA probe: victim_user attempts attacker_low_priv's resource ord_2",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "status": "probe-value",
+            "price": 1
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:19 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "81",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":1,\"status\":\"probe-value\"}\n",
+          "elapsed_ms": 2.8,
+          "timestamp": 1786939279.9245245
+        },
+        {
+          "description": "Verification re-check for F-3279ecfb",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "81",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":0.01,\"status\":\"approved\"}\n",
+          "elapsed_ms": 2.78,
+          "timestamp": 1786939281.8837798
+        }
+      ],
+      "remediation": "Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.",
+      "cwe": "CWE-639",
+      "owasp_api_id": "API1:2023",
+      "tags": [
+        "bola",
+        "idor",
+        "patch"
+      ]
+    },
+    {
+      "id": "F-836759c9",
+      "vuln_class": "BOLA/IDOR",
+      "severity": "high",
+      "endpoint": "PATCH /orders/{order_id}",
+      "title": "Possible BOLA/IDOR on PATCH /orders/{order_id}",
+      "description": "Role 'attacker_low_priv' received a 200 response when requesting resource 'ord_1' (order_id) owned by role 'victim_user'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": "victim_user",
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further."
+      ],
+      "evidence": [
+        {
+          "description": "Baseline: victim_user accesses own resource ord_1",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "75",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_1\",\"item\":\"Laptop\",\"owner_id\":1,\"price\":1200,\"status\":\"placed\"}\n",
+          "elapsed_ms": 2.71,
+          "timestamp": 1786939280.0274205
+        },
+        {
+          "description": "BOLA probe: attacker_low_priv attempts victim_user's resource ord_1",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "status": "probe-value",
+            "price": 1
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "77",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_1\",\"item\":\"Laptop\",\"owner_id\":1,\"price\":1,\"status\":\"probe-value\"}\n",
+          "elapsed_ms": 2.91,
+          "timestamp": 1786939280.1304998
+        },
+        {
+          "description": "Verification re-check for F-836759c9",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_1",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "77",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_1\",\"item\":\"Laptop\",\"owner_id\":1,\"price\":1,\"status\":\"probe-value\"}\n",
+          "elapsed_ms": 2.62,
+          "timestamp": 1786939281.986558
+        }
+      ],
+      "remediation": "Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.",
+      "cwe": "CWE-639",
+      "owasp_api_id": "API1:2023",
+      "tags": [
+        "bola",
+        "idor",
+        "patch"
+      ]
+    },
+    {
+      "id": "F-b448df85",
+      "vuln_class": "BFLA",
+      "severity": "high",
+      "endpoint": "GET /admin/reports",
+      "title": "Possible broken function-level authorization on GET /admin/reports",
+      "description": "Endpoint GET /admin/reports is declared as restricted to role(s) ['admin'], but role 'attacker_low_priv' received a 200 response when calling it directly.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Restricted endpoint reproducibly returned a success status to an unauthorized role, with a response body that does not read as an error."
+      ],
+      "evidence": [
+        {
+          "description": "BFLA probe: unauthorized role 'attacker_low_priv' calls restricted GET /admin/reports",
+          "method": "GET",
+          "url": "http://localhost:8000/admin/reports",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "93",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"generated_for\":\"attacker@example.com\",\"report\":\"quarterly revenue\",\"total_revenue\":184300}\n",
+          "elapsed_ms": 2.52,
+          "timestamp": 1786939280.4398885
+        },
+        {
+          "description": "Verification re-check for F-b448df85",
+          "method": "GET",
+          "url": "http://localhost:8000/admin/reports",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:22 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "93",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"generated_for\":\"attacker@example.com\",\"report\":\"quarterly revenue\",\"total_revenue\":184300}\n",
+          "elapsed_ms": 3.09,
+          "timestamp": 1786939282.0898538
+        }
+      ],
+      "remediation": "Add a server-side function-level authorization check on this endpoint (e.g. role/permission middleware) rather than relying on hiding the operation from lower-privileged clients in documentation or UI only.",
+      "cwe": "CWE-862",
+      "owasp_api_id": "API5:2023",
+      "tags": [
+        "bfla",
+        "get"
+      ]
+    },
+    {
+      "id": "F-35f9c23a",
+      "vuln_class": "BFLA",
+      "severity": "high",
+      "endpoint": "GET /admin/reports",
+      "title": "Possible broken function-level authorization on GET /admin/reports",
+      "description": "Endpoint GET /admin/reports is declared as restricted to role(s) ['admin'], but role 'victim_user' received a 200 response when calling it directly.",
+      "actor_role": "victim_user",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Restricted endpoint reproducibly returned a success status to an unauthorized role, with a response body that does not read as an error."
+      ],
+      "evidence": [
+        {
+          "description": "BFLA probe: unauthorized role 'victim_user' calls restricted GET /admin/reports",
+          "method": "GET",
+          "url": "http://localhost:8000/admin/reports",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "91",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"generated_for\":\"victim@example.com\",\"report\":\"quarterly revenue\",\"total_revenue\":184300}\n",
+          "elapsed_ms": 2.54,
+          "timestamp": 1786939280.542622
+        },
+        {
+          "description": "Verification re-check for F-35f9c23a",
+          "method": "GET",
+          "url": "http://localhost:8000/admin/reports",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:22 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "91",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"generated_for\":\"victim@example.com\",\"report\":\"quarterly revenue\",\"total_revenue\":184300}\n",
+          "elapsed_ms": 4.05,
+          "timestamp": 1786939282.1941223
+        }
+      ],
+      "remediation": "Add a server-side function-level authorization check on this endpoint (e.g. role/permission middleware) rather than relying on hiding the operation from lower-privileged clients in documentation or UI only.",
+      "cwe": "CWE-862",
+      "owasp_api_id": "API5:2023",
+      "tags": [
+        "bfla",
+        "get"
+      ]
+    },
+    {
+      "id": "F-3e3e4cde",
+      "vuln_class": "Privilege Escalation",
+      "severity": "critical",
+      "endpoint": "PUT /users/{user_id}/profile",
+      "title": "Possible privilege escalation via mass assignment on PUT /users/{user_id}/profile",
+      "description": "Role 'attacker_low_priv' was able to set the privileged field 'role' to an elevated value via PUT /users/{user_id}/profile (status 200). A subsequent call to the restricted endpoint GET /admin/users then succeeded, directly confirming an elevated capability was gained.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified-high-confidence",
+      "verification_notes": [
+        "Escalation was confirmed by directly observing a subsequent restricted-endpoint call succeed after the privilege field was set."
+      ],
+      "evidence": [
+        {
+          "description": "Privilege escalation probe: role 'attacker_low_priv' sets 'role' -> 'admin' on PUT /users/{user_id}/profile",
+          "method": "PUT",
+          "url": "http://localhost:8000/users/2/profile",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "role": "admin"
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "68",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":10,\"email\":\"attacker@example.com\",\"id\":2,\"role\":\"admin\"}\n",
+          "elapsed_ms": 3.76,
+          "timestamp": 1786939280.6465945
+        },
+        {
+          "description": "Post-escalation capability check: 'attacker_low_priv' retries restricted GET /admin/users",
+          "method": "GET",
+          "url": "http://localhost:8000/admin/users",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": null,
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "199",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "[{\"balance\":50,\"email\":\"victim@example.com\",\"id\":1,\"role\":\"user\"},{\"balance\":10,\"email\":\"attacker@example.com\",\"id\":2,\"role\":\"admin\"},{\"balance\":0,\"email\":\"admin@example.com\",\"id\":3,\"role\":\"admin\"}]\n",
+          "elapsed_ms": 2.74,
+          "timestamp": 1786939280.7495277
+        }
+      ],
+      "remediation": "Use an explicit allow-list of client-settable fields on every write endpoint (avoid blind '**request_body') and never allow role/permission fields to be set through user-facing self-service endpoints. Privilege changes should go through a separate, tightly-authorized admin flow.",
+      "cwe": "CWE-269",
+      "owasp_api_id": "API5:2023 / API3:2023",
+      "tags": [
+        "privesc",
+        "mass-assignment",
+        "put"
+      ]
+    },
+    {
+      "id": "F-0de9c2db",
+      "vuln_class": "Parameter Tampering",
+      "severity": "medium",
+      "endpoint": "PUT /users/{user_id}/profile",
+      "title": "Possible parameter tampering on PUT /users/{user_id}/profile (fields: balance)",
+      "description": "Submitting attacker-favorable values for ['balance'] as low-privilege role 'attacker_low_priv' returned 200, suggesting the server may not be re-validating these fields server-side.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "The tampered value was echoed back in the response, indicating the server accepted and likely persisted the client-supplied value."
+      ],
+      "evidence": [
+        {
+          "description": "Parameter tampering probe: role 'attacker_low_priv' submits out-of-policy values for ['balance'] on PUT /users/{user_id}/profile",
+          "method": "PUT",
+          "url": "http://localhost:8000/users/2/profile",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "balance": 999999
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "72",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"balance\":999999,\"email\":\"attacker@example.com\",\"id\":2,\"role\":\"admin\"}\n",
+          "elapsed_ms": 2.76,
+          "timestamp": 1786939280.8524199
+        }
+      ],
+      "remediation": "Never trust client-supplied values for fields that affect price, balance, ownership, or approval status. Recompute or re-validate these fields server-side from trusted state, and use allow-lists for which fields a given role may set on a resource.",
+      "cwe": "CWE-20",
+      "owasp_api_id": "API6:2023",
+      "tags": [
+        "param-tampering",
+        "put"
+      ]
+    },
+    {
+      "id": "F-6fd391d9",
+      "vuln_class": "Parameter Tampering",
+      "severity": "medium",
+      "endpoint": "PATCH /orders/{order_id}",
+      "title": "Possible parameter tampering on PATCH /orders/{order_id} (fields: price, status)",
+      "description": "Submitting attacker-favorable values for ['price', 'status'] as low-privilege role 'attacker_low_priv' returned 200, suggesting the server may not be re-validating these fields server-side.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "The tampered value was echoed back in the response, indicating the server accepted and likely persisted the client-supplied value."
+      ],
+      "evidence": [
+        {
+          "description": "Parameter tampering probe: role 'attacker_low_priv' submits out-of-policy values for ['price', 'status'] on PATCH /orders/{order_id}",
+          "method": "PATCH",
+          "url": "http://localhost:8000/orders/ord_2",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "price": 0.01,
+            "status": "approved"
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:20 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "81",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"id\":\"ord_2\",\"item\":\"Headphones\",\"owner_id\":2,\"price\":0.01,\"status\":\"approved\"}\n",
+          "elapsed_ms": 2.83,
+          "timestamp": 1786939280.955422
+        }
+      ],
+      "remediation": "Never trust client-supplied values for fields that affect price, balance, ownership, or approval status. Recompute or re-validate these fields server-side from trusted state, and use allow-lists for which fields a given role may set on a resource.",
+      "cwe": "CWE-20",
+      "owasp_api_id": "API6:2023",
+      "tags": [
+        "param-tampering",
+        "patch"
+      ]
+    },
+    {
+      "id": "F-99190406",
+      "vuln_class": "Business Logic Flaw",
+      "severity": "high",
+      "endpoint": "checkout",
+      "title": "Workflow step skip accepted: 'pay' in 'checkout'",
+      "description": "The workflow 'checkout' completed successfully (final status 200) even though the 'pay' step was never performed. This suggests the server does not enforce workflow state/ordering and relies on the client to call steps in the correct sequence.",
+      "actor_role": "attacker_low_priv",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Confirmed by directly executing the abusive workflow sequence and observing it complete successfully."
+      ],
+      "evidence": [
+        {
+          "description": "Workflow 'create_cart' step as role 'attacker_low_priv'",
+          "method": "POST",
+          "url": "http://localhost:8000/cart",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {},
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "16",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"cart_id\":\"1\"}\n",
+          "elapsed_ms": 2.54,
+          "timestamp": 1786939281.0581322
+        },
+        {
+          "description": "Workflow 'checkout' step as role 'attacker_low_priv'",
+          "method": "POST",
+          "url": "http://localhost:8000/cart/1/checkout",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {},
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "65",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"cart_id\":\"1\",\"paid_at_checkout\":false,\"status\":\"order placed\"}\n",
+          "elapsed_ms": 2.66,
+          "timestamp": 1786939281.16099
+        }
+      ],
+      "remediation": "Track workflow/order state server-side (e.g. a state machine) and reject any step whose preconditions were not met, instead of trusting the client to call endpoints in the intended order.",
+      "cwe": "CWE-841",
+      "owasp_api_id": "API6:2023",
+      "tags": [
+        "business-logic",
+        "workflow-skip"
+      ]
+    },
+    {
+      "id": "F-d18c8671",
+      "vuln_class": "Business Logic Flaw",
+      "severity": "medium",
+      "endpoint": "redeem",
+      "title": "Unsafe replay accepted: 'redeem' in workflow 'coupon_redeem'",
+      "description": "Step 'redeem' in workflow 'coupon_redeem' succeeded when called twice in a row with identical input (status 200, then 200), suggesting missing idempotency/state checks (e.g. a coupon or one-time action being usable more than once).",
+      "actor_role": "attacker_low_priv",
+      "victim_role": null,
+      "confirmed": true,
+      "confidence": "verified",
+      "verification_notes": [
+        "Confirmed by directly executing the abusive workflow sequence and observing it complete successfully."
+      ],
+      "evidence": [
+        {
+          "description": "Workflow 'redeem' step as role 'attacker_low_priv'",
+          "method": "POST",
+          "url": "http://localhost:8000/coupons/apply",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "code": "WELCOME10"
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "63",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"applied_count\":1,\"code\":\"WELCOME10\",\"discount_applied\":true}\n",
+          "elapsed_ms": 2.84,
+          "timestamp": 1786939281.2640202
+        },
+        {
+          "description": "Workflow 'redeem' step as role 'attacker_low_priv'",
+          "method": "POST",
+          "url": "http://localhost:8000/coupons/apply",
+          "request_headers": {
+            "Accept": "application/json",
+            "Authorization": "***REDACTED***"
+          },
+          "request_body": {
+            "code": "WELCOME10"
+          },
+          "status_code": 200,
+          "response_headers": {
+            "Server": "Werkzeug/3.1.8 Python/3.12.3",
+            "Date": "Mon, 17 Aug 2026 04:01:21 GMT",
+            "Content-Type": "application/json",
+            "Content-Length": "63",
+            "Connection": "close"
+          },
+          "response_body_excerpt": "{\"applied_count\":2,\"code\":\"WELCOME10\",\"discount_applied\":true}\n",
+          "elapsed_ms": 2.64,
+          "timestamp": 1786939281.366865
+        }
+      ],
+      "remediation": "Enforce idempotency or single-use constraints server-side (e.g. mark coupons/actions as consumed, use idempotency keys, or check current state before allowing the action to repeat).",
+      "cwe": "CWE-841",
+      "owasp_api_id": "API6:2023",
+      "tags": [
+        "business-logic",
+        "unsafe-replay"
+      ]
+    }
+  ],
+  "attack_paths": [
+    {
+      "id": "AP-5cfa18f7",
+      "title": "Cross-account recon feeding a privilege/function abuse (victim_user)",
+      "starting_role": "victim_user",
+      "impact": "Unauthorized read access to other users' data can be combined with a separate authorization weakness to broaden impact beyond simple data disclosure.",
+      "steps": [
+        {
+          "finding_id": "F-897cba07",
+          "description": "Read another principal's data without authorization via GET /users/{user_id}."
+        },
+        {
+          "finding_id": "F-712eee5c",
+          "description": "Read another principal's data without authorization via GET /orders/{order_id}."
+        },
+        {
+          "finding_id": "F-35f9c23a",
+          "description": "Leverage information/context from the prior step to abuse GET /admin/reports."
+        }
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "AP-c4280d9c",
+      "title": "Self-service privilege escalation to restricted functionality (attacker_low_priv)",
+      "starting_role": "attacker_low_priv",
+      "impact": "An authenticated low-privilege user can grant themselves elevated privileges and then directly exercise administrative or restricted functionality.",
+      "steps": [
+        {
+          "finding_id": "F-3e3e4cde",
+          "description": "Escalate privileges as 'attacker_low_priv' via PUT /users/{user_id}/profile."
+        },
+        {
+          "finding_id": "F-b448df85",
+          "description": "Using the elevated context, reach restricted function GET /admin/reports (originally out of scope for 'attacker_low_priv')."
+        }
+      ],
+      "severity": "critical"
+    },
+    {
+      "id": "AP-50ce64e6",
+      "title": "Cross-account recon feeding a privilege/function abuse (attacker_low_priv)",
+      "starting_role": "attacker_low_priv",
+      "impact": "Unauthorized read access to other users' data can be combined with a separate authorization weakness to broaden impact beyond simple data disclosure.",
+      "steps": [
+        {
+          "finding_id": "F-75298985",
+          "description": "Read another principal's data without authorization via GET /users/{user_id}."
+        },
+        {
+          "finding_id": "F-ff2ab737",
+          "description": "Read another principal's data without authorization via GET /orders/{order_id}."
+        },
+        {
+          "finding_id": "F-3e3e4cde",
+          "description": "Leverage information/context from the prior step to abuse PUT /users/{user_id}/profile."
+        },
+        {
+          "finding_id": "F-b448df85",
+          "description": "Leverage information/context from the prior step to abuse GET /admin/reports."
+        }
+      ],
+      "severity": "high"
+    }
+  ],
+  "raw_candidate_count": 13
+}

@@ -1,0 +1,185 @@
+openapi: 3.0.3
+info:
+  title: VulnAPI Lab
+  version: "1.0"
+  description: Deliberately vulnerable lab API for exercising the Attack-Path & Authorization Tester.
+servers:
+  - url: http://localhost:8000
+paths:
+  /login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /users/{user_id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+
+  /users/{user_id}/secure:
+    get:
+      operationId: getUserSecure
+      tags: [users]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+
+  /users/{user_id}/profile:
+    put:
+      operationId: updateProfile
+      tags: [users]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                role: { type: string }
+                balance: { type: number }
+      responses:
+        "200": { description: OK }
+
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [admin]
+      x-required-roles: ["admin"]
+      responses:
+        "200": { description: OK }
+
+  /admin/reports:
+    get:
+      operationId: adminReports
+      tags: [admin]
+      x-required-roles: ["admin"]
+      responses:
+        "200": { description: OK }
+
+  /orders/{order_id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+    patch:
+      operationId: patchOrder
+      tags: [orders]
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string }
+                price: { type: number }
+      responses:
+        "200": { description: OK }
+
+  /orders/{order_id}/cancel:
+    post:
+      operationId: cancelOrder
+      tags: [orders]
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /cart:
+    post:
+      operationId: createCart
+      tags: [cart]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: OK }
+
+  /cart/{cart_id}/payment:
+    post:
+      operationId: payCart
+      tags: [cart]
+      parameters:
+        - name: cart_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: number }
+      responses:
+        "200": { description: OK }
+
+  /cart/{cart_id}/checkout:
+    post:
+      operationId: checkoutCart
+      tags: [cart]
+      parameters:
+        - name: cart_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: OK }
+
+  /coupons/apply:
+    post:
+      operationId: applyCoupon
+      tags: [coupons]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string }
+      responses:
+        "200": { description: OK }

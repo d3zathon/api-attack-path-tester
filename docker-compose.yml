@@ -1,0 +1,25 @@
+services:
+  lab:
+    build:
+      context: ./lab
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  apiattack:
+    build:
+      context: .
+    depends_on:
+      lab:
+        condition: service_healthy
+    volumes:
+      - ./examples:/workspace/examples
+      - ./reports:/workspace/reports
+    # When both services run inside compose's shared network, point roles.yaml's
+    # base_url at http://lab:8000 (the service name) rather than localhost.
+    # example: docker compose run --rm apiattack scan --spec examples/openapi_lab.yaml
+    #          --config examples/roles_lab.yaml --out reports --yes-i-am-authorized

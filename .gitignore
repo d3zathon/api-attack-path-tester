@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+apiattack-report/
+demo-report/
+reports/
+examples/roles_lab.yaml
+.DS_Store

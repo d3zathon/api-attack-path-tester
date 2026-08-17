@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>API Attack-Path & Authorization Test Report</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #12151c; --border: #232838; --text: #dfe4ee; --muted: #8b93a7;
+    --crit: #ff5470; --high: #ff9f43; --med: #ffd23f; --low: #46c2ff; --info: #7c8899;
+    --ok: #35d07f;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 2.5rem; line-height: 1.55; }
+  h1 { font-size: 1.6rem; margin-bottom: .25rem; }
+  h2 { border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: 2.5rem; }
+  .meta { color: var(--muted); font-size: .9rem; margin-bottom: 2rem; }
+  .meta span { display: inline-block; margin-right: 1.5rem; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .badge { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .sev-critical { background: rgba(255,84,112,.15); color: var(--crit); border: 1px solid var(--crit); }
+  .sev-high { background: rgba(255,159,67,.15); color: var(--high); border: 1px solid var(--high); }
+  .sev-medium { background: rgba(255,210,63,.15); color: var(--med); border: 1px solid var(--med); }
+  .sev-low { background: rgba(70,194,255,.15); color: var(--low); border: 1px solid var(--low); }
+  .sev-info { background: rgba(124,136,153,.15); color: var(--info); border: 1px solid var(--info); }
+  .status-confirmed { color: var(--ok); font-weight: 600; }
+  .status-unverified { color: var(--muted); font-weight: 600; }
+  code, pre { font-family: "SF Mono", Consolas, monospace; font-size: .85rem; }
+  pre { background: #090a0e; border: 1px solid var(--border); border-radius: 8px; padding: .9rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: .75rem; }
+  .steps ol { padding-left: 1.2rem; }
+  .finding-title { font-size: 1.05rem; font-weight: 700; margin: .3rem 0 .6rem; }
+  .kv { color: var(--muted); font-size: .85rem; margin-bottom: .4rem; }
+  .kv b { color: var(--text); }
+  footer { color: var(--muted); font-size: .8rem; margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+</style>
+</head>
+<body>
+  <h1>API Attack-Path & Authorization Test Report</h1>
+  <div class="meta">
+    <span><b>Target:</b> http://localhost:8000</span>
+    <span><b>Roles:</b> attacker_low_priv, victim_user, admin</span>
+    <span><b>Endpoints:</b> 13 / 13</span>
+    <span><b>Confirmed:</b> 13 / 13</span>
+  </div>
+
+  <h2>Attack Paths</h2>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <div class="finding-title">Cross-account recon feeding a privilege/function abuse (victim_user)</div>
+    <div class="kv"><b>Starting role:</b> victim_user</div>
+    <div class="kv">Unauthorized read access to other users' data can be combined with a separate authorization weakness to broaden impact beyond simple data disclosure.</div>
+    <div class="steps"><ol>
+<li>Read another principal's data without authorization via GET /users/{user_id}. <code>(F-897cba07)</code></li><li>Read another principal's data without authorization via GET /orders/{order_id}. <code>(F-712eee5c)</code></li><li>Leverage information/context from the prior step to abuse GET /admin/reports. <code>(F-35f9c23a)</code></li>    </ol></div>
+  </div>
+  <div class="card">
+    <span class="badge sev-critical">critical</span>
+    <div class="finding-title">Self-service privilege escalation to restricted functionality (attacker_low_priv)</div>
+    <div class="kv"><b>Starting role:</b> attacker_low_priv</div>
+    <div class="kv">An authenticated low-privilege user can grant themselves elevated privileges and then directly exercise administrative or restricted functionality.</div>
+    <div class="steps"><ol>
+<li>Escalate privileges as 'attacker_low_priv' via PUT /users/{user_id}/profile. <code>(F-3e3e4cde)</code></li><li>Using the elevated context, reach restricted function GET /admin/reports (originally out of scope for 'attacker_low_priv'). <code>(F-b448df85)</code></li>    </ol></div>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <div class="finding-title">Cross-account recon feeding a privilege/function abuse (attacker_low_priv)</div>
+    <div class="kv"><b>Starting role:</b> attacker_low_priv</div>
+    <div class="kv">Unauthorized read access to other users' data can be combined with a separate authorization weakness to broaden impact beyond simple data disclosure.</div>
+    <div class="steps"><ol>
+<li>Read another principal's data without authorization via GET /users/{user_id}. <code>(F-75298985)</code></li><li>Read another principal's data without authorization via GET /orders/{order_id}. <code>(F-ff2ab737)</code></li><li>Leverage information/context from the prior step to abuse PUT /users/{user_id}/profile. <code>(F-3e3e4cde)</code></li><li>Leverage information/context from the prior step to abuse GET /admin/reports. <code>(F-b448df85)</code></li>    </ol></div>
+  </div>
+
+  <h2>Findings</h2>
+  <div class="card">
+    <span class="badge sev-critical">critical</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified-high-confidence)
+    </span>
+    <div class="finding-title">Possible privilege escalation via mass assignment on PUT /users/{user_id}/profile</div>
+    <div class="kv"><b>Class:</b> Privilege Escalation &nbsp; <b>OWASP:</b> API5:2023 / API3:2023 &nbsp; <b>CWE:</b> CWE-269</div>
+    <div class="kv"><b>Endpoint:</b> <code>PUT /users/{user_id}/profile</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv</div>
+    <p>Role 'attacker_low_priv' was able to set the privileged field 'role' to an elevated value via PUT /users/{user_id}/profile (status 200). A subsequent call to the restricted endpoint GET /admin/users then succeeded, directly confirming an elevated capability was gained.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Escalation was confirmed by directly observing a subsequent restricted-endpoint call succeed after the privilege field was set.</li></ul>
+    <p><b>Remediation:</b> Use an explicit allow-list of client-settable fields on every write endpoint (avoid blind '**request_body') and never allow role/permission fields to be set through user-facing self-service endpoints. Privilege changes should go through a separate, tightly-authorized admin flow.</p>
+    <details>
+      <summary>Evidence (2 request/response pair(s))</summary>
+      <pre>[1] Privilege escalation probe: role 'attacker_low_priv' sets 'role' -> 'admin' on PUT /users/{user_id}/profile
+PUT http://localhost:8000/users/2/profile
+Status: 200  (3.76 ms)
+Request body: {'role': 'admin'}
+Response excerpt:
+{"balance":10,"email":"attacker@example.com","id":2,"role":"admin"}
+</pre>
+      <pre>[2] Post-escalation capability check: 'attacker_low_priv' retries restricted GET /admin/users
+GET http://localhost:8000/admin/users
+Status: 200  (2.74 ms)
+Request body: None
+Response excerpt:
+[{"balance":50,"email":"victim@example.com","id":1,"role":"user"},{"balance":10,"email":"attacker@example.com","id":2,"role":"admin"},{"balance":0,"email":"admin@example.com","id":3,"role":"admin"}]
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified-high-confidence)
+    </span>
+    <div class="finding-title">Possible BOLA/IDOR on GET /users/{user_id}</div>
+    <div class="kv"><b>Class:</b> BOLA/IDOR &nbsp; <b>OWASP:</b> API1:2023 &nbsp; <b>CWE:</b> CWE-639</div>
+    <div class="kv"><b>Endpoint:</b> <code>GET /users/{user_id}</code></div>
+    <div class="kv"><b>Actor:</b> victim_user &nbsp; <b>Victim:</b> attacker_low_priv</div>
+    <p>Role 'victim_user' received a 200 response when requesting resource '2' (user_id) owned by role 'attacker_low_priv'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Response body contained an identity marker belonging to the victim role, directly confirming cross-account data disclosure.</li></ul>
+    <p><b>Remediation:</b> Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.</p>
+    <details>
+      <summary>Evidence (3 request/response pair(s))</summary>
+      <pre>[1] Baseline: attacker_low_priv accesses own resource 2
+GET http://localhost:8000/users/2
+Status: 200  (3.29 ms)
+Request body: None
+Response excerpt:
+{"balance":10,"email":"attacker@example.com","id":2,"role":"user"}
+</pre>
+      <pre>[2] BOLA probe: victim_user attempts attacker_low_priv's resource 2
+GET http://localhost:8000/users/2
+Status: 200  (2.8 ms)
+Request body: None
+Response excerpt:
+{"balance":10,"email":"attacker@example.com","id":2,"role":"user"}
+</pre>
+      <pre>[3] Verification re-check for F-897cba07
+GET http://localhost:8000/users/2
+Status: 200  (2.73 ms)
+Request body: None
+Response excerpt:
+{"balance":999999,"email":"attacker@example.com","id":2,"role":"admin"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified-high-confidence)
+    </span>
+    <div class="finding-title">Possible BOLA/IDOR on GET /users/{user_id}</div>
+    <div class="kv"><b>Class:</b> BOLA/IDOR &nbsp; <b>OWASP:</b> API1:2023 &nbsp; <b>CWE:</b> CWE-639</div>
+    <div class="kv"><b>Endpoint:</b> <code>GET /users/{user_id}</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv &nbsp; <b>Victim:</b> victim_user</div>
+    <p>Role 'attacker_low_priv' received a 200 response when requesting resource '1' (user_id) owned by role 'victim_user'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Response body contained an identity marker belonging to the victim role, directly confirming cross-account data disclosure.</li></ul>
+    <p><b>Remediation:</b> Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.</p>
+    <details>
+      <summary>Evidence (3 request/response pair(s))</summary>
+      <pre>[1] Baseline: victim_user accesses own resource 1
+GET http://localhost:8000/users/1
+Status: 200  (2.61 ms)
+Request body: None
+Response excerpt:
+{"balance":50,"email":"victim@example.com","id":1,"role":"user"}
+</pre>
+      <pre>[2] BOLA probe: attacker_low_priv attempts victim_user's resource 1
+GET http://localhost:8000/users/1
+Status: 200  (2.66 ms)
+Request body: None
+Response excerpt:
+{"balance":50,"email":"victim@example.com","id":1,"role":"user"}
+</pre>
+      <pre>[3] Verification re-check for F-75298985
+GET http://localhost:8000/users/1
+Status: 200  (2.86 ms)
+Request body: None
+Response excerpt:
+{"balance":50,"email":"victim@example.com","id":1,"role":"user"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible BOLA/IDOR on GET /orders/{order_id}</div>
+    <div class="kv"><b>Class:</b> BOLA/IDOR &nbsp; <b>OWASP:</b> API1:2023 &nbsp; <b>CWE:</b> CWE-639</div>
+    <div class="kv"><b>Endpoint:</b> <code>GET /orders/{order_id}</code></div>
+    <div class="kv"><b>Actor:</b> victim_user &nbsp; <b>Victim:</b> attacker_low_priv</div>
+    <p>Role 'victim_user' received a 200 response when requesting resource 'ord_2' (order_id) owned by role 'attacker_low_priv'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further.</li></ul>
+    <p><b>Remediation:</b> Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.</p>
+    <details>
+      <summary>Evidence (3 request/response pair(s))</summary>
+      <pre>[1] Baseline: attacker_low_priv accesses own resource ord_2
+GET http://localhost:8000/orders/ord_2
+Status: 200  (2.61 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":80,"status":"placed"}
+</pre>
+      <pre>[2] BOLA probe: victim_user attempts attacker_low_priv's resource ord_2
+GET http://localhost:8000/orders/ord_2
+Status: 200  (2.57 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":80,"status":"placed"}
+</pre>
+      <pre>[3] Verification re-check for F-712eee5c
+GET http://localhost:8000/orders/ord_2
+Status: 200  (3.0 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":0.01,"status":"approved"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible BOLA/IDOR on GET /orders/{order_id}</div>
+    <div class="kv"><b>Class:</b> BOLA/IDOR &nbsp; <b>OWASP:</b> API1:2023 &nbsp; <b>CWE:</b> CWE-639</div>
+    <div class="kv"><b>Endpoint:</b> <code>GET /orders/{order_id}</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv &nbsp; <b>Victim:</b> victim_user</div>
+    <p>Role 'attacker_low_priv' received a 200 response when requesting resource 'ord_1' (order_id) owned by role 'victim_user'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further.</li></ul>
+    <p><b>Remediation:</b> Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.</p>
+    <details>
+      <summary>Evidence (3 request/response pair(s))</summary>
+      <pre>[1] Baseline: victim_user accesses own resource ord_1
+GET http://localhost:8000/orders/ord_1
+Status: 200  (2.56 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_1","item":"Laptop","owner_id":1,"price":1200,"status":"placed"}
+</pre>
+      <pre>[2] BOLA probe: attacker_low_priv attempts victim_user's resource ord_1
+GET http://localhost:8000/orders/ord_1
+Status: 200  (2.44 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_1","item":"Laptop","owner_id":1,"price":1200,"status":"placed"}
+</pre>
+      <pre>[3] Verification re-check for F-ff2ab737
+GET http://localhost:8000/orders/ord_1
+Status: 200  (2.68 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_1","item":"Laptop","owner_id":1,"price":1,"status":"probe-value"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible BOLA/IDOR on PATCH /orders/{order_id}</div>
+    <div class="kv"><b>Class:</b> BOLA/IDOR &nbsp; <b>OWASP:</b> API1:2023 &nbsp; <b>CWE:</b> CWE-639</div>
+    <div class="kv"><b>Endpoint:</b> <code>PATCH /orders/{order_id}</code></div>
+    <div class="kv"><b>Actor:</b> victim_user &nbsp; <b>Victim:</b> attacker_low_priv</div>
+    <p>Role 'victim_user' received a 200 response when requesting resource 'ord_2' (order_id) owned by role 'attacker_low_priv'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further.</li></ul>
+    <p><b>Remediation:</b> Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.</p>
+    <details>
+      <summary>Evidence (3 request/response pair(s))</summary>
+      <pre>[1] Baseline: attacker_low_priv accesses own resource ord_2
+PATCH http://localhost:8000/orders/ord_2
+Status: 200  (2.84 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":80,"status":"placed"}
+</pre>
+      <pre>[2] BOLA probe: victim_user attempts attacker_low_priv's resource ord_2
+PATCH http://localhost:8000/orders/ord_2
+Status: 200  (2.8 ms)
+Request body: {'status': 'probe-value', 'price': 1}
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":1,"status":"probe-value"}
+</pre>
+      <pre>[3] Verification re-check for F-3279ecfb
+PATCH http://localhost:8000/orders/ord_2
+Status: 200  (2.78 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":0.01,"status":"approved"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible BOLA/IDOR on PATCH /orders/{order_id}</div>
+    <div class="kv"><b>Class:</b> BOLA/IDOR &nbsp; <b>OWASP:</b> API1:2023 &nbsp; <b>CWE:</b> CWE-639</div>
+    <div class="kv"><b>Endpoint:</b> <code>PATCH /orders/{order_id}</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv &nbsp; <b>Victim:</b> victim_user</div>
+    <p>Role 'attacker_low_priv' received a 200 response when requesting resource 'ord_1' (order_id) owned by role 'victim_user'. Baseline owner access also succeeded (200), suggesting the endpoint may not enforce object-level ownership checks.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Result reproduced consistently and the response body was non-empty and non-error-shaped; no explicit victim identity marker configured to confirm content further.</li></ul>
+    <p><b>Remediation:</b> Enforce object-level authorization on every access to this resource: verify the authenticated principal is the owner (or explicitly authorized) before returning or mutating data, server-side, on every request - never trust the client-supplied identifier alone.</p>
+    <details>
+      <summary>Evidence (3 request/response pair(s))</summary>
+      <pre>[1] Baseline: victim_user accesses own resource ord_1
+PATCH http://localhost:8000/orders/ord_1
+Status: 200  (2.71 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_1","item":"Laptop","owner_id":1,"price":1200,"status":"placed"}
+</pre>
+      <pre>[2] BOLA probe: attacker_low_priv attempts victim_user's resource ord_1
+PATCH http://localhost:8000/orders/ord_1
+Status: 200  (2.91 ms)
+Request body: {'status': 'probe-value', 'price': 1}
+Response excerpt:
+{"id":"ord_1","item":"Laptop","owner_id":1,"price":1,"status":"probe-value"}
+</pre>
+      <pre>[3] Verification re-check for F-836759c9
+PATCH http://localhost:8000/orders/ord_1
+Status: 200  (2.62 ms)
+Request body: None
+Response excerpt:
+{"id":"ord_1","item":"Laptop","owner_id":1,"price":1,"status":"probe-value"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible broken function-level authorization on GET /admin/reports</div>
+    <div class="kv"><b>Class:</b> BFLA &nbsp; <b>OWASP:</b> API5:2023 &nbsp; <b>CWE:</b> CWE-862</div>
+    <div class="kv"><b>Endpoint:</b> <code>GET /admin/reports</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv</div>
+    <p>Endpoint GET /admin/reports is declared as restricted to role(s) ['admin'], but role 'attacker_low_priv' received a 200 response when calling it directly.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Restricted endpoint reproducibly returned a success status to an unauthorized role, with a response body that does not read as an error.</li></ul>
+    <p><b>Remediation:</b> Add a server-side function-level authorization check on this endpoint (e.g. role/permission middleware) rather than relying on hiding the operation from lower-privileged clients in documentation or UI only.</p>
+    <details>
+      <summary>Evidence (2 request/response pair(s))</summary>
+      <pre>[1] BFLA probe: unauthorized role 'attacker_low_priv' calls restricted GET /admin/reports
+GET http://localhost:8000/admin/reports
+Status: 200  (2.52 ms)
+Request body: None
+Response excerpt:
+{"generated_for":"attacker@example.com","report":"quarterly revenue","total_revenue":184300}
+</pre>
+      <pre>[2] Verification re-check for F-b448df85
+GET http://localhost:8000/admin/reports
+Status: 200  (3.09 ms)
+Request body: None
+Response excerpt:
+{"generated_for":"attacker@example.com","report":"quarterly revenue","total_revenue":184300}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible broken function-level authorization on GET /admin/reports</div>
+    <div class="kv"><b>Class:</b> BFLA &nbsp; <b>OWASP:</b> API5:2023 &nbsp; <b>CWE:</b> CWE-862</div>
+    <div class="kv"><b>Endpoint:</b> <code>GET /admin/reports</code></div>
+    <div class="kv"><b>Actor:</b> victim_user</div>
+    <p>Endpoint GET /admin/reports is declared as restricted to role(s) ['admin'], but role 'victim_user' received a 200 response when calling it directly.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Restricted endpoint reproducibly returned a success status to an unauthorized role, with a response body that does not read as an error.</li></ul>
+    <p><b>Remediation:</b> Add a server-side function-level authorization check on this endpoint (e.g. role/permission middleware) rather than relying on hiding the operation from lower-privileged clients in documentation or UI only.</p>
+    <details>
+      <summary>Evidence (2 request/response pair(s))</summary>
+      <pre>[1] BFLA probe: unauthorized role 'victim_user' calls restricted GET /admin/reports
+GET http://localhost:8000/admin/reports
+Status: 200  (2.54 ms)
+Request body: None
+Response excerpt:
+{"generated_for":"victim@example.com","report":"quarterly revenue","total_revenue":184300}
+</pre>
+      <pre>[2] Verification re-check for F-35f9c23a
+GET http://localhost:8000/admin/reports
+Status: 200  (4.05 ms)
+Request body: None
+Response excerpt:
+{"generated_for":"victim@example.com","report":"quarterly revenue","total_revenue":184300}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-high">high</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Workflow step skip accepted: 'pay' in 'checkout'</div>
+    <div class="kv"><b>Class:</b> Business Logic Flaw &nbsp; <b>OWASP:</b> API6:2023 &nbsp; <b>CWE:</b> CWE-841</div>
+    <div class="kv"><b>Endpoint:</b> <code>checkout</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv</div>
+    <p>The workflow 'checkout' completed successfully (final status 200) even though the 'pay' step was never performed. This suggests the server does not enforce workflow state/ordering and relies on the client to call steps in the correct sequence.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Confirmed by directly executing the abusive workflow sequence and observing it complete successfully.</li></ul>
+    <p><b>Remediation:</b> Track workflow/order state server-side (e.g. a state machine) and reject any step whose preconditions were not met, instead of trusting the client to call endpoints in the intended order.</p>
+    <details>
+      <summary>Evidence (2 request/response pair(s))</summary>
+      <pre>[1] Workflow 'create_cart' step as role 'attacker_low_priv'
+POST http://localhost:8000/cart
+Status: 200  (2.54 ms)
+Request body: {}
+Response excerpt:
+{"cart_id":"1"}
+</pre>
+      <pre>[2] Workflow 'checkout' step as role 'attacker_low_priv'
+POST http://localhost:8000/cart/1/checkout
+Status: 200  (2.66 ms)
+Request body: {}
+Response excerpt:
+{"cart_id":"1","paid_at_checkout":false,"status":"order placed"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-medium">medium</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible parameter tampering on PUT /users/{user_id}/profile (fields: balance)</div>
+    <div class="kv"><b>Class:</b> Parameter Tampering &nbsp; <b>OWASP:</b> API6:2023 &nbsp; <b>CWE:</b> CWE-20</div>
+    <div class="kv"><b>Endpoint:</b> <code>PUT /users/{user_id}/profile</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv</div>
+    <p>Submitting attacker-favorable values for ['balance'] as low-privilege role 'attacker_low_priv' returned 200, suggesting the server may not be re-validating these fields server-side.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">The tampered value was echoed back in the response, indicating the server accepted and likely persisted the client-supplied value.</li></ul>
+    <p><b>Remediation:</b> Never trust client-supplied values for fields that affect price, balance, ownership, or approval status. Recompute or re-validate these fields server-side from trusted state, and use allow-lists for which fields a given role may set on a resource.</p>
+    <details>
+      <summary>Evidence (1 request/response pair(s))</summary>
+      <pre>[1] Parameter tampering probe: role 'attacker_low_priv' submits out-of-policy values for ['balance'] on PUT /users/{user_id}/profile
+PUT http://localhost:8000/users/2/profile
+Status: 200  (2.76 ms)
+Request body: {'balance': 999999}
+Response excerpt:
+{"balance":999999,"email":"attacker@example.com","id":2,"role":"admin"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-medium">medium</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Possible parameter tampering on PATCH /orders/{order_id} (fields: price, status)</div>
+    <div class="kv"><b>Class:</b> Parameter Tampering &nbsp; <b>OWASP:</b> API6:2023 &nbsp; <b>CWE:</b> CWE-20</div>
+    <div class="kv"><b>Endpoint:</b> <code>PATCH /orders/{order_id}</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv</div>
+    <p>Submitting attacker-favorable values for ['price', 'status'] as low-privilege role 'attacker_low_priv' returned 200, suggesting the server may not be re-validating these fields server-side.</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">The tampered value was echoed back in the response, indicating the server accepted and likely persisted the client-supplied value.</li></ul>
+    <p><b>Remediation:</b> Never trust client-supplied values for fields that affect price, balance, ownership, or approval status. Recompute or re-validate these fields server-side from trusted state, and use allow-lists for which fields a given role may set on a resource.</p>
+    <details>
+      <summary>Evidence (1 request/response pair(s))</summary>
+      <pre>[1] Parameter tampering probe: role 'attacker_low_priv' submits out-of-policy values for ['price', 'status'] on PATCH /orders/{order_id}
+PATCH http://localhost:8000/orders/ord_2
+Status: 200  (2.83 ms)
+Request body: {'price': 0.01, 'status': 'approved'}
+Response excerpt:
+{"id":"ord_2","item":"Headphones","owner_id":2,"price":0.01,"status":"approved"}
+</pre>
+    </details>
+  </div>
+  <div class="card">
+    <span class="badge sev-medium">medium</span>
+    <span class="status-confirmed">
+      CONFIRMED (verified)
+    </span>
+    <div class="finding-title">Unsafe replay accepted: 'redeem' in workflow 'coupon_redeem'</div>
+    <div class="kv"><b>Class:</b> Business Logic Flaw &nbsp; <b>OWASP:</b> API6:2023 &nbsp; <b>CWE:</b> CWE-841</div>
+    <div class="kv"><b>Endpoint:</b> <code>redeem</code></div>
+    <div class="kv"><b>Actor:</b> attacker_low_priv</div>
+    <p>Step 'redeem' in workflow 'coupon_redeem' succeeded when called twice in a row with identical input (status 200, then 200), suggesting missing idempotency/state checks (e.g. a coupon or one-time action being usable more than once).</p>
+    <div class="kv"><b>Verification:</b></div>
+    <ul><li class="kv">Confirmed by directly executing the abusive workflow sequence and observing it complete successfully.</li></ul>
+    <p><b>Remediation:</b> Enforce idempotency or single-use constraints server-side (e.g. mark coupons/actions as consumed, use idempotency keys, or check current state before allowing the action to repeat).</p>
+    <details>
+      <summary>Evidence (2 request/response pair(s))</summary>
+      <pre>[1] Workflow 'redeem' step as role 'attacker_low_priv'
+POST http://localhost:8000/coupons/apply
+Status: 200  (2.84 ms)
+Request body: {'code': 'WELCOME10'}
+Response excerpt:
+{"applied_count":1,"code":"WELCOME10","discount_applied":true}
+</pre>
+      <pre>[2] Workflow 'redeem' step as role 'attacker_low_priv'
+POST http://localhost:8000/coupons/apply
+Status: 200  (2.64 ms)
+Request body: {'code': 'WELCOME10'}
+Response excerpt:
+{"applied_count":2,"code":"WELCOME10","discount_applied":true}
+</pre>
+    </details>
+  </div>
+
+  <footer>
+    Generated by API Attack-Path & Authorization Tester. For use only against systems you are explicitly authorized to test.
+  </footer>
+</body>
+</html>
