@@ -1,8 +1,4 @@
-"""Parses an OpenAPI 3.x spec (JSON or YAML, local file or URL) into normalized Endpoint objects.
-
-Deliberately dependency-light: we don't need full JSON-schema validation, just enough
-structural understanding to enumerate operations, path parameters, and request bodies.
-"""
+"""Parses an OpenAPI 3.x spec into normalized Endpoint objects."""
 from __future__ import annotations
 
 import json
@@ -18,6 +14,7 @@ from .models import Endpoint
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
 _ID_PARAM_RE = re.compile(r"(id|uuid|key|slug)$", re.IGNORECASE)
+_PATH_PARAM_RE = re.compile(r"\{([^{}]+)\}")
 
 
 class SpecParseError(Exception):
@@ -66,6 +63,33 @@ def _extract_request_body_schema(root: Dict[str, Any], op: Dict[str, Any]) -> Di
     return schema or {}
 
 
+def _extract_path_params(root: Dict[str, Any], path: str, path_item: Dict[str, Any], op: Dict[str, Any]) -> List[str]:
+    """Extract path parameters from OpenAPI metadata, with a template-path fallback.
+
+    A valid path template such as ``/expenses/{expense_id}`` is enough to identify the
+    parameter even when a hand-authored/local OpenAPI document omitted the corresponding
+    ``parameters`` entry. This keeps authorization checks from silently skipping an
+    otherwise testable endpoint.
+    """
+    names: List[str] = []
+    all_params = list(path_item.get("parameters", []) or []) + list(op.get("parameters", []) or [])
+
+    for param in all_params:
+        if not isinstance(param, dict):
+            continue
+        if "$ref" in param:
+            param = _resolve_ref(root, param["$ref"])
+        if param.get("in") == "path" and param.get("name"):
+            names.append(str(param["name"]))
+
+    # Fallback: infer names directly from {param} path-template segments.
+    for name in _PATH_PARAM_RE.findall(path):
+        if name not in names:
+            names.append(name)
+
+    return names
+
+
 def parse_spec(source: str) -> List[Endpoint]:
     """Parse an OpenAPI spec into a flat list of Endpoint objects."""
     root = _load_raw(source)
@@ -73,25 +97,16 @@ def parse_spec(source: str) -> List[Endpoint]:
         raise SpecParseError("Spec has no 'paths' section - is this a valid OpenAPI document?")
 
     endpoints: List[Endpoint] = []
-    global_params_by_path: Dict[str, List[Dict[str, Any]]] = {}
 
     for path, path_item in root.get("paths", {}).items():
         if not isinstance(path_item, dict):
             continue
-        shared_params = path_item.get("parameters", [])
 
         for method, op in path_item.items():
             if method.lower() not in HTTP_METHODS or not isinstance(op, dict):
                 continue
 
-            all_params = shared_params + op.get("parameters", [])
-            path_params = []
-            for p in all_params:
-                if "$ref" in p:
-                    p = _resolve_ref(root, p["$ref"])
-                if p.get("in") == "path":
-                    path_params.append(p.get("name"))
-
+            path_params = _extract_path_params(root, path, path_item, op)
             required_roles = op.get("x-required-roles")
 
             ep = Endpoint(
@@ -99,7 +114,7 @@ def parse_spec(source: str) -> List[Endpoint]:
                 method=method.upper(),
                 operation_id=op.get("operationId"),
                 tags=op.get("tags", []),
-                path_params=[p for p in path_params if p],
+                path_params=path_params,
                 request_body_schema=_extract_request_body_schema(root, op) or None,
                 required_roles=required_roles,
                 is_id_bearing=any(_ID_PARAM_RE.search(p or "") for p in path_params),
