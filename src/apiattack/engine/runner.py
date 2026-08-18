@@ -21,24 +21,24 @@ def _in_scope(ep: Endpoint, config: ScanConfig) -> bool:
     return True
 
 
-def _bola_diagnostics(candidates, verified) -> tuple[str, str]:
-    """Return compact status/reason diagnostics so verifier failures are actionable."""
-    pairs = Counter()
-    reasons = Counter()
+def _bola_diagnostics(candidates) -> tuple[Counter, Counter]:
+    pairs: Counter = Counter()
+    reasons: Counter = Counter()
     for f in candidates:
-        if f.vuln_class != VulnClass.BOLA or len(f.evidence) < 2:
+        if f.vuln_class != VulnClass.BOLA:
             continue
-        pairs[(f.evidence[0].status_code, f.evidence[1].status_code)] += 1
-        if f.verification_notes:
-            reasons[f.verification_notes[-1]] += 1
-    pair_text = ", ".join(
-        f"owner={owner}/attacker={attacker}: {count}"
-        for (owner, attacker), count in sorted(pairs.items())
+        if len(f.evidence) >= 2:
+            pairs[(f.actor_role, f.victim_role, f.endpoint, f.evidence[0].status_code, f.evidence[1].status_code)] += 1
+        note = f.verification_notes[-1] if f.verification_notes else "no verification decision recorded"
+        reasons[note] += 1
+    return pairs, reasons
+
+
+def _format_bola_pairs(pairs: Counter) -> str:
+    return "; ".join(
+        f"{endpoint} [{victim}->{actor}] owner={owner}/attacker={attacker}: {count}"
+        for (actor, victim, endpoint, owner, attacker), count in pairs.most_common(12)
     ) or "none"
-    reason_text = "; ".join(
-        f"{reason} ({count})" for reason, count in reasons.most_common(3)
-    ) or "none"
-    return pair_text, reason_text
 
 
 def run_scan(
@@ -84,12 +84,29 @@ def run_scan(
             f"Verification complete: {len(verified)} finding(s) retained, "
             f"{len(result.confirmed_findings)} confirmed"
         )
+
         bola_candidates = [f for f in candidates if f.vuln_class == VulnClass.BOLA]
         if bola_candidates:
-            pairs, reasons = _bola_diagnostics(bola_candidates, verified)
-            progress_cb(f"BOLA HTTP evidence: {pairs}")
-            if not result.confirmed_findings:
-                progress_cb(f"BOLA verification reasons: {reasons}")
+            pairs, reasons = _bola_diagnostics(bola_candidates)
+            progress_cb(f"BOLA HTTP evidence: {_format_bola_pairs(pairs)}")
+            progress_cb(
+                "BOLA decisions: "
+                + "; ".join(f"{reason} ({count})" for reason, count in reasons.most_common(8))
+            )
+
+            # Show the first five concrete probes so a failed scanner can be diagnosed
+            # from one terminal run without inspecting JSON manually.
+            for f in bola_candidates[:5]:
+                if len(f.evidence) < 2:
+                    progress_cb(f"BOLA probe: {f.endpoint} [{f.actor_role}->{f.victim_role}] missing evidence")
+                    continue
+                owner_ev, attacker_ev = f.evidence[0], f.evidence[1]
+                progress_cb(
+                    f"BOLA probe: {f.endpoint} [{f.actor_role}->{f.victim_role}] "
+                    f"owner={owner_ev.status_code} attacker={attacker_ev.status_code} "
+                    f"url={attacker_ev.url}"
+                )
+
         progress_cb("Building attack paths from confirmed findings...")
     result.attack_paths = build_attack_paths(verified)
 
