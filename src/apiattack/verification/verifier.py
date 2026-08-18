@@ -1,16 +1,15 @@
 """Verification layer for APIAT findings.
 
-Verification must distinguish a blocked probe from a probe that was never useful enough
-to assess. BOLA is confirmed only when the legitimate owner can access the object and a
-different principal can reproducibly access the same object. Generic response text such
-as ``error`` is not treated as an authorization failure because valid API payloads often
-contain that field/message.
+Verification distinguishes a blocked probe from a reproducibly successful cross-principal
+access. BOLA verification deliberately avoids byte-for-byte response comparison because
+real APIs commonly return dynamic fields such as timestamps, request IDs, pagination
+metadata, or server-generated values.
 """
 from __future__ import annotations
 
 import json
 import re
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ..config.loader import ScanConfig
 from ..engine.http_client import HttpClient
@@ -66,17 +65,39 @@ class Verifier:
     @staticmethod
     def _meaningful_body(body: str) -> bool:
         text = (body or "").strip()
-        if not text or text in {"{}", "[]", "null", "\"\""}:
-            return False
-        return True
+        return bool(text and text not in {"{}", "[]", "null", "\"\""})
 
     @staticmethod
-    def _canonical_body(body: str) -> str:
-        """Normalize JSON so verification is not fooled by formatting differences."""
+    def _json_value(body: str) -> Any:
         try:
-            return json.dumps(json.loads(body), sort_keys=True, separators=(",", ":"))
+            return json.loads(body)
         except (TypeError, ValueError):
-            return " ".join((body or "").split())
+            return None
+
+    @classmethod
+    def _same_resource(cls, first: str, second: str, resource_id: Optional[str] = None) -> bool:
+        """Determine whether two successful representations refer to the same object.
+
+        Exact body equality is intentionally not required. Dynamic fields are normal in
+        production APIs. If the JSON exposes an ``id`` field matching the tested object,
+        use that strong signal; otherwise successful repeated access is sufficient after
+        the endpoint/path has already fixed the concrete object identifier.
+        """
+        if not first.strip() or not second.strip():
+            return False
+        if resource_id is None:
+            return True
+
+        a = cls._json_value(first)
+        b = cls._json_value(second)
+        if isinstance(a, dict) and isinstance(b, dict):
+            ids_a = [a.get(k) for k in ("id", "expense_id", "payment_id", "user_id", "project_id")]
+            ids_b = [b.get(k) for k in ("id", "expense_id", "payment_id", "user_id", "project_id")]
+            present_a = {str(v) for v in ids_a if v is not None}
+            present_b = {str(v) for v in ids_b if v is not None}
+            if present_a or present_b:
+                return str(resource_id) in present_a and str(resource_id) in present_b
+        return True
 
     def _verify_bola(self, f: Finding) -> Optional[Finding]:
         if len(f.evidence) < 2:
@@ -85,15 +106,12 @@ class Verifier:
         owner_ev = f.evidence[0]
         attack_ev = f.evidence[1]
 
-        # Candidate generation has already established an ownership relationship.
-        # Verification now answers one question: can the other principal reproduce
-        # access to the owner's object?
         if not self._successful(owner_ev.status_code):
             f.confirmed = False
             f.confidence = "unverified"
             f.verification_notes.append(
                 f"Owner baseline failed with HTTP {owner_ev.status_code}; object availability "
-                "could not be established for this candidate."
+                "could not be established."
             )
             return f
 
@@ -101,8 +119,7 @@ class Verifier:
             f.confirmed = False
             f.confidence = "verified-safe" if attack_ev.status_code in {401, 403} else "unverified"
             f.verification_notes.append(
-                f"Cross-role request was blocked with HTTP {attack_ev.status_code}; "
-                "no BOLA was confirmed."
+                f"Cross-role request was blocked with HTTP {attack_ev.status_code}; no BOLA confirmed."
             )
             return f
 
@@ -110,18 +127,13 @@ class Verifier:
         if self._body_has_authorization_denial(body):
             f.confirmed = False
             f.confidence = "verified-safe"
-            f.verification_notes.append(
-                "Cross-role response contained an explicit authorization-denial marker; "
-                "the successful status was not treated as sufficient evidence."
-            )
+            f.verification_notes.append("Successful response contained an explicit authorization-denial marker.")
             return f
 
-        if not self._meaningful_body(body) and attack_ev.method.upper() in {"GET", "HEAD"}:
+        if attack_ev.method.upper() in {"GET", "HEAD"} and not self._meaningful_body(body):
             f.confirmed = False
             f.confidence = "unverified"
-            f.verification_notes.append(
-                "Cross-role GET succeeded but returned no meaningful representation of the object."
-            )
+            f.verification_notes.append("Cross-role read succeeded but returned no meaningful object representation.")
             return f
 
         actor = self._role(f.actor_role)
@@ -141,24 +153,26 @@ class Verifier:
                 )
                 return f
 
-            # For reads, require a stable representation across two attacker requests.
-            # This avoids confirming a transient 2xx error page or health response.
-            if attack_ev.method.upper() in {"GET", "HEAD"}:
-                body2 = ev2.response_body_excerpt or ""
-                if self._body_has_authorization_denial(body2):
-                    f.confirmed = False
-                    f.confidence = "unverified"
-                    f.verification_notes.append(
-                        "The second cross-role response contained an authorization denial."
-                    )
-                    return f
-                if self._canonical_body(body2) != self._canonical_body(body):
-                    f.confirmed = False
-                    f.confidence = "unverified"
-                    f.verification_notes.append(
-                        "Cross-role access returned inconsistent representations on re-test."
-                    )
-                    return f
+            body2 = ev2.response_body_excerpt or ""
+            if self._body_has_authorization_denial(body2):
+                f.confirmed = False
+                f.confidence = "unverified"
+                f.verification_notes.append("The re-test contained an authorization-denial marker.")
+                return f
+            if attack_ev.method.upper() in {"GET", "HEAD"} and not self._meaningful_body(body2):
+                f.confirmed = False
+                f.confidence = "unverified"
+                f.verification_notes.append("The re-test returned no meaningful object representation.")
+                return f
+
+            # Do NOT require byte-for-byte equality. APIs routinely change timestamps,
+            # request IDs, cache metadata, etags, and other dynamic fields between calls.
+            resource_id = _resource_id_from_description(f.description)
+            if not self._same_resource(body, body2, resource_id):
+                f.confirmed = False
+                f.confidence = "unverified"
+                f.verification_notes.append("Re-test succeeded but did not expose the same object identifier.")
+                return f
 
         victim = self._role(f.victim_role) if f.victim_role else None
         marker_hit = False
@@ -175,8 +189,8 @@ class Verifier:
         else:
             f.confidence = "verified"
             f.verification_notes.append(
-                "The legitimate owner accessed the object and the different principal "
-                "reproducibly received a successful, meaningful representation of it."
+                "Owner access succeeded and a different principal reproducibly received the same "
+                "object through a successful, meaningful response. Dynamic response fields were ignored."
             )
         return f
 
@@ -184,8 +198,7 @@ class Verifier:
         ev = f.evidence[-1] if f.evidence else None
         if ev is None or not self._successful(ev.status_code):
             return None
-        body = ev.response_body_excerpt or ""
-        if self._body_has_authorization_denial(body):
+        if self._body_has_authorization_denial(ev.response_body_excerpt or ""):
             return None
         actor = self._role(f.actor_role)
         if actor:
@@ -227,8 +240,7 @@ class Verifier:
         f.confirmed = echoed
         f.confidence = "verified" if echoed else "unverified"
         f.verification_notes.append(
-            "Tampered value was observed in the response."
-            if echoed else
+            "Tampered value was observed in the response." if echoed else
             "Request was accepted but the tampered value was not observable in the response."
         )
         return f
@@ -238,6 +250,11 @@ class Verifier:
         f.confirmed = True
         f.verification_notes.append("Confirmed by executing the abusive workflow sequence successfully.")
         return f
+
+
+def _resource_id_from_description(description: str) -> Optional[str]:
+    match = re.search(r"resource ['\"]([^'\"]+)['\"]", description or "")
+    return match.group(1) if match else None
 
 
 def _path_from_url(url: str, base_url: str) -> str:
