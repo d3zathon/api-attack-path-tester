@@ -12,6 +12,7 @@ for the intentionally-correct control endpoints used to check the tool doesn't f
 """
 from __future__ import annotations
 
+import os
 import uuid
 
 from flask import Flask, jsonify, request
@@ -26,15 +27,15 @@ USERS = {
     2: {"id": 2, "email": "attacker@example.com", "password": "attacker-pass", "role": "user", "balance": 10},
     3: {"id": 3, "email": "admin@example.com", "password": "admin-pass", "role": "admin", "balance": 0},
 }
-TOKENS = {}  # token -> user_id
+TOKENS = {}
 
 ORDERS = {
     "ord_1": {"id": "ord_1", "owner_id": 1, "item": "Laptop", "status": "placed", "price": 1200},
     "ord_2": {"id": "ord_2", "owner_id": 2, "item": "Headphones", "status": "placed", "price": 80},
 }
 
-CARTS = {}       # cart_id -> {"paid": bool, "items": [...]}
-COUPONS_USED = {}  # (user_id, code) -> count
+CARTS = {}
+COUPONS_USED = {}
 
 
 def _new_token(user_id: int) -> str:
@@ -77,8 +78,6 @@ def login():
 # ---------------------------------------------------------------------------------------
 @app.get("/users/<int:user_id>")
 def get_user(user_id):
-    """VULNERABLE: BOLA - returns any user's profile to any authenticated caller,
-    with no ownership/role check."""
     user, err = require_auth()
     if err:
         return err
@@ -90,8 +89,6 @@ def get_user(user_id):
 
 @app.get("/users/<int:user_id>/secure")
 def get_user_secure(user_id):
-    """SAFE control endpoint: proper ownership check, used to verify the tool does not
-    false-positive on correctly-authorized endpoints."""
     user, err = require_auth()
     if err:
         return err
@@ -105,8 +102,6 @@ def get_user_secure(user_id):
 
 @app.put("/users/<int:user_id>/profile")
 def update_profile(user_id):
-    """VULNERABLE: mass assignment / privilege escalation - blindly applies any field
-    in the request body, including 'role', with only a weak ownership check."""
     user, err = require_auth()
     if err:
         return err
@@ -117,16 +112,12 @@ def update_profile(user_id):
     for key, value in data.items():
         if key in ("id", "password"):
             continue
-        target[key] = value  # <-- no allow-list; 'role' can be set by the user themselves
+        target[key] = value
     return jsonify({k: v for k, v in target.items() if k != "password"})
 
 
-# ---------------------------------------------------------------------------------------
-# Admin - one SAFE, one VULNERABLE (BFLA)
-# ---------------------------------------------------------------------------------------
 @app.get("/admin/users")
 def admin_list_users():
-    """SAFE control endpoint: correctly enforces the admin role."""
     user, err = require_auth()
     if err:
         return err
@@ -137,19 +128,14 @@ def admin_list_users():
 
 @app.get("/admin/reports")
 def admin_reports():
-    """VULNERABLE: BFLA - an admin-only report endpoint that forgot its role check."""
     user, err = require_auth()
     if err:
         return err
     return jsonify({"report": "quarterly revenue", "total_revenue": 184300, "generated_for": user["email"]})
 
 
-# ---------------------------------------------------------------------------------------
-# Orders - BOLA + parameter tampering
-# ---------------------------------------------------------------------------------------
 @app.get("/orders/<order_id>")
 def get_order(order_id):
-    """VULNERABLE: BOLA - no ownership check on order lookups."""
     user, err = require_auth()
     if err:
         return err
@@ -161,7 +147,6 @@ def get_order(order_id):
 
 @app.post("/orders/<order_id>/cancel")
 def cancel_order(order_id):
-    """VULNERABLE: BOLA/IDOR - any authenticated user can cancel any order."""
     user, err = require_auth()
     if err:
         return err
@@ -174,8 +159,6 @@ def cancel_order(order_id):
 
 @app.patch("/orders/<order_id>")
 def patch_order(order_id):
-    """VULNERABLE: parameter tampering - accepts and applies a client-supplied 'status'
-    and 'price' with no validation and no ownership check."""
     user, err = require_auth()
     if err:
         return err
@@ -189,15 +172,12 @@ def patch_order(order_id):
     return jsonify(order)
 
 
-# ---------------------------------------------------------------------------------------
-# Business logic - checkout workflow bypass + coupon replay
-# ---------------------------------------------------------------------------------------
 @app.post("/cart")
 def create_cart():
     user, err = require_auth()
     if err:
         return err
-    cart_id = "1"  # fixed id for lab simplicity
+    cart_id = "1"
     CARTS[cart_id] = {"paid": False, "owner_id": user["id"]}
     return jsonify({"cart_id": cart_id})
 
@@ -214,20 +194,15 @@ def pay_cart(cart_id):
 
 @app.post("/cart/<cart_id>/checkout")
 def checkout_cart(cart_id):
-    """VULNERABLE: business logic flaw - checkout does not verify `paid` is True before
-    completing the order, so the payment step can be skipped entirely."""
     user, err = require_auth()
     if err:
         return err
     cart = CARTS.setdefault(cart_id, {"paid": False, "owner_id": user["id"]})
-    # BUG: should check `if not cart["paid"]: return 402` - intentionally omitted
     return jsonify({"cart_id": cart_id, "status": "order placed", "paid_at_checkout": cart["paid"]})
 
 
 @app.post("/coupons/apply")
 def apply_coupon():
-    """VULNERABLE: business logic flaw - a coupon can be applied an unlimited number of
-    times by the same user; no single-use tracking is enforced."""
     user, err = require_auth()
     if err:
         return err
@@ -245,11 +220,6 @@ def health():
 
 @app.post("/debug/reset")
 def debug_reset():
-    """Test-only helper: resets all in-memory state back to the seeded defaults so
-    automated test runs (which may include a successful privilege-escalation exploit
-    that mutates state) don't leak side effects between test cases. Not part of the
-    "vulnerable surface" under test - just lab plumbing.
-    """
     global USERS, TOKENS, ORDERS, CARTS, COUPONS_USED
     USERS = {
         1: {"id": 1, "email": "victim@example.com", "password": "victim-pass", "role": "user", "balance": 50},
@@ -267,4 +237,5 @@ def debug_reset():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    port = int(os.getenv("PORT", "8010"))
+    app.run(host="0.0.0.0", port=port, debug=False)
