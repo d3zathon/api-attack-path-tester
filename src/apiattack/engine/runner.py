@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import time
 from collections import Counter
 from typing import List, Optional
@@ -13,12 +15,65 @@ from ..verification.verifier import Verifier
 from .http_client import HttpClient
 
 
+class TargetIdentityMismatch(RuntimeError):
+    """Configured role metadata does not match an active bearer JWT identity."""
+
+
 def _in_scope(ep: Endpoint, config: ScanConfig) -> bool:
     if config.scope_exclude and any(ep.path.startswith(p) for p in config.scope_exclude):
         return False
     if config.scope_include:
         return any(ep.path.startswith(p) for p in config.scope_include)
     return True
+
+
+def _decode_jwt_payload(token: str) -> dict:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return {}
+    raw = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(raw.encode("ascii")).decode("utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
+
+def _validate_configured_identities(config: ScanConfig, progress_cb=None) -> None:
+    """Fail fast when configured identity metadata disagrees with bearer JWT claims.
+
+    This is only applied to roles that explicitly define ``user_id`` metadata and use a
+    JWT bearer token. Generic APIAT configs without those fields remain unaffected.
+    """
+    mismatches = []
+    for role in config.roles:
+        expected_id = role.metadata.get("user_id")
+        expected_name = role.metadata.get("username") or role.name
+        if expected_id is None:
+            continue
+
+        auth = next((v for k, v in role.auth_header.items() if k.lower() == "authorization"), "")
+        if not auth.lower().startswith("bearer "):
+            continue
+
+        payload = _decode_jwt_payload(auth.split(None, 1)[1].strip())
+        actual_id = payload.get("sub")
+        actual_name = payload.get("username")
+
+        if actual_id is not None and str(actual_id) != str(expected_id):
+            mismatches.append(f"{role.name}: expected user_id={expected_id}, token sub={actual_id}")
+        if actual_name is not None and str(actual_name) != str(expected_name):
+            mismatches.append(f"{role.name}: expected username={expected_name}, token username={actual_name}")
+
+    if mismatches:
+        message = (
+            "Target identity mismatch. The configured roles/resources do not match the "
+            "currently authenticated target identities. Reset/reseed the target or update "
+            "the scan configuration before running authorization checks: " + "; ".join(mismatches)
+        )
+        if progress_cb:
+            progress_cb(f"ERROR: {message}")
+        raise TargetIdentityMismatch(message)
 
 
 def _bola_diagnostics(candidates) -> tuple[Counter, Counter]:
@@ -47,6 +102,8 @@ def run_scan(
     check_names: Optional[List[str]] = None,
     progress_cb=None,
 ) -> ScanResult:
+    _validate_configured_identities(config, progress_cb=progress_cb)
+
     endpoints = parse_spec(spec_source)
     in_scope = [e for e in endpoints if _in_scope(e, config)]
 
@@ -93,9 +150,6 @@ def run_scan(
                 "BOLA decisions: "
                 + "; ".join(f"{reason} ({count})" for reason, count in reasons.most_common(8))
             )
-
-            # Show the first five concrete probes so a failed scanner can be diagnosed
-            # from one terminal run without inspecting JSON manually.
             for f in bola_candidates[:5]:
                 if len(f.evidence) < 2:
                     progress_cb(f"BOLA probe: {f.endpoint} [{f.actor_role}->{f.victim_role}] missing evidence")
@@ -109,6 +163,5 @@ def run_scan(
 
         progress_cb("Building attack paths from confirmed findings...")
     result.attack_paths = build_attack_paths(verified)
-
     result.finished_at = time.time()
     return result
