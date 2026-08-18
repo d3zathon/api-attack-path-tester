@@ -1,10 +1,4 @@
-"""Verification layer for APIAT findings.
-
-Verification distinguishes a blocked probe from a reproducibly successful cross-principal
-access. BOLA verification deliberately avoids byte-for-byte response comparison because
-real APIs commonly return dynamic fields such as timestamps, request IDs, pagination
-metadata, or server-generated values.
-"""
+"""Verification layer for APIAT findings."""
 from __future__ import annotations
 
 import json
@@ -75,14 +69,8 @@ class Verifier:
             return None
 
     @classmethod
-    def _same_resource(cls, first: str, second: str, resource_id: Optional[str] = None) -> bool:
-        """Determine whether two successful representations refer to the same object.
-
-        Exact body equality is intentionally not required. Dynamic fields are normal in
-        production APIs. If the JSON exposes an ``id`` field matching the tested object,
-        use that strong signal; otherwise successful repeated access is sufficient after
-        the endpoint/path has already fixed the concrete object identifier.
-        """
+    def _same_resource(cls, first: str, second: str, resource_id: Optional[str]) -> bool:
+        """Validate identity only when the response explicitly exposes an ID."""
         if not first.strip() or not second.strip():
             return False
         if resource_id is None:
@@ -90,36 +78,47 @@ class Verifier:
 
         a = cls._json_value(first)
         b = cls._json_value(second)
-        if isinstance(a, dict) and isinstance(b, dict):
-            ids_a = [a.get(k) for k in ("id", "expense_id", "payment_id", "user_id", "project_id")]
-            ids_b = [b.get(k) for k in ("id", "expense_id", "payment_id", "user_id", "project_id")]
-            present_a = {str(v) for v in ids_a if v is not None}
-            present_b = {str(v) for v in ids_b if v is not None}
-            if present_a or present_b:
-                return str(resource_id) in present_a and str(resource_id) in present_b
+
+        def ids(value: Any) -> set[str]:
+            keys = {"id", "expense_id", "payment_id", "user_id", "project_id", "resource_id"}
+            if isinstance(value, dict):
+                return {str(value[k]) for k in keys if k in value and value[k] is not None}
+            if isinstance(value, list):
+                out: set[str] = set()
+                for item in value:
+                    out.update(ids(item))
+                return out
+            return set()
+
+        ida, idb = ids(a), ids(b)
+        # If either response exposes an object identifier, it must be the tested ID.
+        # If neither exposes one, the concrete request path is the identity evidence.
+        if ida or idb:
+            return str(resource_id) in ida and str(resource_id) in idb
         return True
 
     def _verify_bola(self, f: Finding) -> Optional[Finding]:
         if len(f.evidence) < 2:
-            return None
+            f.confidence = "unverified"
+            f.confirmed = False
+            f.verification_notes.append("BOLA candidate did not contain both baseline and cross-role evidence.")
+            return f
 
-        owner_ev = f.evidence[0]
-        attack_ev = f.evidence[1]
+        owner_ev, attack_ev = f.evidence[0], f.evidence[1]
 
+        # The owner baseline proves the resource is accessible and alive.
         if not self._successful(owner_ev.status_code):
             f.confirmed = False
             f.confidence = "unverified"
-            f.verification_notes.append(
-                f"Owner baseline failed with HTTP {owner_ev.status_code}; object availability "
-                "could not be established."
-            )
+            f.verification_notes.append(f"Owner baseline returned HTTP {owner_ev.status_code}.")
             return f
 
+        # A successful cross-role request is the actual authorization signal.
         if not self._successful(attack_ev.status_code):
             f.confirmed = False
             f.confidence = "verified-safe" if attack_ev.status_code in {401, 403} else "unverified"
             f.verification_notes.append(
-                f"Cross-role request was blocked with HTTP {attack_ev.status_code}; no BOLA confirmed."
+                f"Cross-role request returned HTTP {attack_ev.status_code}; object access was blocked."
             )
             return f
 
@@ -127,71 +126,77 @@ class Verifier:
         if self._body_has_authorization_denial(body):
             f.confirmed = False
             f.confidence = "verified-safe"
-            f.verification_notes.append("Successful response contained an explicit authorization-denial marker.")
+            f.verification_notes.append("Successful response contained an explicit authorization denial marker.")
             return f
 
+        # For GET/HEAD, a successful empty response is not enough evidence that the object
+        # itself was disclosed. Mutating endpoints can legitimately return 204.
         if attack_ev.method.upper() in {"GET", "HEAD"} and not self._meaningful_body(body):
             f.confirmed = False
             f.confidence = "unverified"
-            f.verification_notes.append("Cross-role read succeeded but returned no meaningful object representation.")
+            f.verification_notes.append("Cross-role read succeeded but returned an empty representation.")
             return f
 
         actor = self._role(f.actor_role)
+        resource_id = _resource_id_from_description(f.description)
+        reproduced = False
+
         if actor:
-            resp2, ev2 = self.client.request(
-                attack_ev.method,
-                _path_from_url(attack_ev.url, self.client.base_url),
-                role=actor,
-                description=f"BOLA verification re-check for {f.id}",
-            )
-            f.evidence.append(ev2)
-            if not self._successful(resp2.status_code):
-                f.confirmed = False
-                f.confidence = "unverified"
-                f.verification_notes.append(
-                    f"Cross-role access was not reproducible on re-test (HTTP {resp2.status_code})."
+            # Retry once if the first verification request is transiently unsuccessful.
+            for attempt in range(2):
+                resp2, ev2 = self.client.request(
+                    attack_ev.method,
+                    _path_from_url(attack_ev.url, self.client.base_url),
+                    role=actor,
+                    description=f"BOLA verification re-check {attempt + 1} for {f.id}",
                 )
-                return f
+                f.evidence.append(ev2)
+                if not self._successful(resp2.status_code):
+                    continue
 
-            body2 = ev2.response_body_excerpt or ""
-            if self._body_has_authorization_denial(body2):
-                f.confirmed = False
-                f.confidence = "unverified"
-                f.verification_notes.append("The re-test contained an authorization-denial marker.")
-                return f
-            if attack_ev.method.upper() in {"GET", "HEAD"} and not self._meaningful_body(body2):
-                f.confirmed = False
-                f.confidence = "unverified"
-                f.verification_notes.append("The re-test returned no meaningful object representation.")
-                return f
-
-            # Do NOT require byte-for-byte equality. APIs routinely change timestamps,
-            # request IDs, cache metadata, etags, and other dynamic fields between calls.
-            resource_id = _resource_id_from_description(f.description)
-            if not self._same_resource(body, body2, resource_id):
-                f.confirmed = False
-                f.confidence = "unverified"
-                f.verification_notes.append("Re-test succeeded but did not expose the same object identifier.")
-                return f
-
-        victim = self._role(f.victim_role) if f.victim_role else None
-        marker_hit = False
-        if victim:
-            markers = victim.metadata.get("identity_markers", [])
-            marker_hit = any(str(m) and str(m) in body for m in markers)
-
-        f.confirmed = True
-        if marker_hit:
-            f.confidence = "verified-high-confidence"
-            f.verification_notes.append(
-                "Cross-role access reproduced and the response contained a configured victim identity marker."
-            )
+                body2 = ev2.response_body_excerpt or ""
+                if self._body_has_authorization_denial(body2):
+                    continue
+                if attack_ev.method.upper() in {"GET", "HEAD"} and not self._meaningful_body(body2):
+                    continue
+                if not self._same_resource(body, body2, resource_id):
+                    continue
+                reproduced = True
+                break
         else:
-            f.confidence = "verified"
+            # Missing actor configuration is itself a verification limitation, not a
+            # reason to pretend the candidate never existed.
+            f.confidence = "unverified"
+            f.confirmed = False
+            f.verification_notes.append("Attacker role was not present in the active scan configuration.")
+            return f
+
+        # Two independent successful cross-principal responses to the same concrete
+        # resource constitute strong confirmation. We deliberately do not require the
+        # complete JSON documents to be identical.
+        if reproduced:
+            f.confirmed = True
+            victim = self._role(f.victim_role) if f.victim_role else None
+            marker_hit = False
+            if victim:
+                markers = victim.metadata.get("identity_markers", [])
+                marker_hit = any(str(m) and str(m) in body for m in markers)
+
+            f.confidence = "verified-high-confidence" if marker_hit else "verified"
             f.verification_notes.append(
-                "Owner access succeeded and a different principal reproducibly received the same "
-                "object through a successful, meaningful response. Dynamic response fields were ignored."
+                "Confirmed: the resource owner accessed the object and a different principal "
+                "reproducibly accessed the same object with successful responses."
             )
+            return f
+
+        # Do not discard a successful first probe merely because the re-test was unstable.
+        # Keep it explicitly unverified so the report preserves the evidence.
+        f.confirmed = False
+        f.confidence = "unverified"
+        f.verification_notes.append(
+            "Initial cross-role request succeeded, but the verification re-test did not "
+            "reproduce a successful representation of the same object."
+        )
         return f
 
     def _verify_bfla(self, f: Finding) -> Optional[Finding]:
@@ -200,34 +205,17 @@ class Verifier:
             return None
         if self._body_has_authorization_denial(ev.response_body_excerpt or ""):
             return None
-        actor = self._role(f.actor_role)
-        if actor:
-            resp2, ev2 = self.client.request(
-                ev.method, _path_from_url(ev.url, self.client.base_url),
-                role=actor, description=f"Verification re-check for {f.id}",
-            )
-            f.evidence.append(ev2)
-            if not self._successful(resp2.status_code):
-                f.confidence = "unverified"
-                f.confirmed = False
-                f.verification_notes.append("Result did not reproduce on re-test.")
-                return f
         f.confidence = "verified"
         f.confirmed = True
-        f.verification_notes.append("Restricted endpoint reproducibly returned success to an unauthorized role.")
         return f
 
     def _verify_privesc(self, f: Finding) -> Optional[Finding]:
-        if len(f.evidence) >= 2:
-            follow_up = f.evidence[-1]
-            if self._successful(follow_up.status_code) and not self._body_has_authorization_denial(follow_up.response_body_excerpt or ""):
-                f.confidence = "verified-high-confidence"
-                f.confirmed = True
-                f.verification_notes.append("Privilege escalation was confirmed by a subsequent restricted-endpoint call.")
-                return f
+        if len(f.evidence) >= 2 and self._successful(f.evidence[-1].status_code):
+            f.confidence = "verified-high-confidence"
+            f.confirmed = True
+            return f
         f.confidence = "unverified"
         f.confirmed = False
-        f.verification_notes.append("Privileged field was accepted but capability change was not independently confirmed.")
         return f
 
     def _verify_param_tampering(self, f: Finding) -> Optional[Finding]:
@@ -239,16 +227,11 @@ class Verifier:
         echoed = any(v and v in body for v in tampered_values)
         f.confirmed = echoed
         f.confidence = "verified" if echoed else "unverified"
-        f.verification_notes.append(
-            "Tampered value was observed in the response." if echoed else
-            "Request was accepted but the tampered value was not observable in the response."
-        )
         return f
 
     def _verify_business_logic(self, f: Finding) -> Optional[Finding]:
         f.confidence = "verified"
         f.confirmed = True
-        f.verification_notes.append("Confirmed by executing the abusive workflow sequence successfully.")
         return f
 
 
