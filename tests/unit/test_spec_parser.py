@@ -24,6 +24,30 @@ def test_identifies_id_bearing_endpoints():
     assert not login_ep.is_id_bearing
 
 
+def test_infers_path_parameter_from_template_when_metadata_is_missing(tmp_path):
+    spec = tmp_path / "minimal.yaml"
+    spec.write_text(
+        """
+openapi: 3.0.0
+info:
+  title: Minimal
+  version: 1.0.0
+paths:
+  /api/v1/expenses/{expense_id}:
+    get:
+      responses:
+        '200':
+          description: OK
+""",
+        encoding="utf-8",
+    )
+
+    endpoints = parse_spec(str(spec))
+    ep = next(e for e in endpoints if e.key == "GET /api/v1/expenses/{expense_id}")
+    assert ep.path_params == ["expense_id"]
+    assert ep.is_id_bearing
+
+
 def test_required_roles_extension_parsed():
     endpoints = parse_spec(SPEC)
     admin_ep = next(e for e in endpoints if e.key == "GET /admin/reports")
