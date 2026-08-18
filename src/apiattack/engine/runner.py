@@ -47,6 +47,8 @@ def run_scan(
             progress_cb(f"Running check: {name} ({len(in_scope)} endpoints in scope)")
         found = check.run(in_scope)
         candidates.extend(found)
+        if progress_cb:
+            progress_cb(f"Check {name}: {len(found)} candidate finding(s)")
 
     result.raw_candidate_count = len(candidates)
 
@@ -57,6 +59,10 @@ def run_scan(
     result.findings = verified
 
     if progress_cb:
+        progress_cb(
+            f"Verification complete: {len(verified)} finding(s) retained, "
+            f"{len(result.confirmed_findings)} confirmed"
+        )
         progress_cb("Building attack paths from confirmed findings...")
     result.attack_paths = build_attack_paths(verified)
 
