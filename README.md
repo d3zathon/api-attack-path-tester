@@ -112,6 +112,10 @@ Do **not** use production credentials unless you have explicit authorization and
 
 # Installation
 
+APIAT provides a setup script to simplify installation and configuration.
+
+## Quick Installation
+
 Clone the repository:
 
 ```bash
@@ -119,7 +123,82 @@ git clone https://github.com/d3zathon/api-attack-path-tester.git
 cd api-attack-path-tester
 ```
 
-Create a virtual environment:
+Make the setup script executable:
+
+```bash
+chmod +x setup.sh
+```
+
+Run the setup script:
+
+```bash
+./setup.sh
+```
+
+The setup script handles the required project installation and environment setup.
+
+After installation, verify that APIAT is available:
+
+```bash
+apiattack --help
+```
+
+If the command is available, the installation was successful.
+
+---
+
+## If `setup.sh` Doesn't Run
+
+If you receive:
+
+```text
+Permission denied
+```
+
+run:
+
+```bash
+chmod +x setup.sh
+```
+
+and then:
+
+```bash
+./setup.sh
+```
+
+If you receive:
+
+```text
+No such file or directory
+```
+
+make sure you are running the command from the project root:
+
+```bash
+cd api-attack-path-tester
+ls
+```
+
+You should see the project files, including:
+
+```text
+setup.sh
+```
+
+Then run:
+
+```bash
+./setup.sh
+```
+
+---
+
+## Manual Installation
+
+If you prefer not to use the setup script, you can install APIAT manually.
+
+Create a Python virtual environment:
 
 ```bash
 python3 -m venv .venv
@@ -139,21 +218,33 @@ source .venv/bin/activate
 .venv\Scripts\Activate.ps1
 ```
 
-Install the project:
+Install APIAT:
 
 ```bash
 pip install -e .
 ```
 
-Verify the installation:
+Verify:
 
 ```bash
 apiattack --help
 ```
 
-You should see the APIAT command-line interface.
-
 ---
+
+## Recommended Installation
+
+For most users, use:
+
+```bash
+git clone https://github.com/d3zathon/api-attack-path-tester.git
+cd api-attack-path-tester
+chmod +x setup.sh
+./setup.sh
+apiattack --help
+```
+
+Once `apiattack --help` works, continue to the **Quick Start** or **Testing Your Own API** section.
 
 # Quick Start: Test the Included Lab
 
