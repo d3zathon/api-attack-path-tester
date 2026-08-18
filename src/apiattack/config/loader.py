@@ -1,8 +1,4 @@
-"""Loads scan configuration: roles (identities + tokens + owned resources), endpoint
-authorization requirements, workflow definitions for business-logic checks, and
-general scan scope/settings. This is the file that makes the tool authorized-testing-only:
-you must explicitly provide credentials/tokens you are entitled to use.
-"""
+"""Loads scan configuration for APIAT and supported AcmeFlow lab configs."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -58,66 +54,33 @@ DEFAULT_SENSITIVE_FIELDS = [
 ]
 
 
-def _as_list(value: Any) -> list:
-    """Return config collections as lists without changing their meaning."""
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, dict):
-        return list(value.values())
-    raise TypeError(f"Expected a list or mapping, got {type(value).__name__}")
-
-
 def _login_role(base_url: str, auth: Dict[str, Any], username: str, password: str) -> Dict[str, str]:
-    """Exchange a configured test user's credentials for the API bearer token."""
     token_url = str(auth.get("token_url", "/api/v1/auth/login"))
-    if token_url.startswith("http://") or token_url.startswith("https://"):
-        url = token_url
-    else:
-        url = f"{base_url.rstrip('/')}/{token_url.lstrip('/')}"
-
-    encoding = str(auth.get("request_encoding", "form")).lower()
+    url = token_url if token_url.startswith(("http://", "https://")) else f"{base_url.rstrip('/')}/{token_url.lstrip('/')}"
     payload = {"username": username, "password": password}
-    if encoding in {"json", "application/json"}:
-        response = requests.post(url, json=payload, timeout=15)
-    else:
-        response = requests.post(url, data=payload, timeout=15)
-
+    encoding = str(auth.get("request_encoding", "form")).lower()
+    response = requests.post(url, json=payload, timeout=15) if encoding in {"json", "application/json"} else requests.post(url, data=payload, timeout=15)
     response.raise_for_status()
     body = response.json()
     token_field = auth.get("response_token_field", "access_token")
     token = body.get(token_field)
     if not token:
-        raise ValueError(
-            f"Authentication succeeded for '{username}', but token field '{token_field}' "
-            "was not present in the response"
-        )
-
+        raise ValueError(f"Authentication succeeded for '{username}', but token field '{token_field}' was not present in the response")
     header = str(auth.get("header", "Authorization"))
     scheme = str(auth.get("scheme", "Bearer")).strip()
     return {header: f"{scheme} {token}".strip()}
 
 
 def _load_acmeflow_roles(data: Dict[str, Any], base_url: str) -> List[Role]:
-    """Normalize AcmeFlow's role -> users configuration into APIAT Role objects."""
+    """Convert AcmeFlow role categories/users into APIAT identities and ownership maps."""
     auth = data.get("auth", {})
     role_map = data.get("roles", {})
     ownership = data.get("resource_ownership", {})
-
     if not isinstance(role_map, dict):
         raise TypeError("AcmeFlow 'roles' must be a mapping of role name -> users")
 
     users: Dict[int, Role] = {}
-    user_role: Dict[int, str] = {}
-    username_to_id: Dict[str, int] = {}
-
-    privilege_by_role = {
-        "employee": 0,
-        "manager": 1,
-        "finance": 2,
-        "admin": 9,
-    }
+    privilege_by_role = {"employee": 0, "manager": 1, "finance": 2, "admin": 9}
 
     for role_name, role_data in role_map.items():
         if not isinstance(role_data, dict):
@@ -131,10 +94,9 @@ def _load_acmeflow_roles(data: Dict[str, Any], base_url: str) -> List[Role]:
             if not password:
                 raise ValueError(f"Missing password for configured test user '{username}'")
 
-            auth_header = _login_role(base_url, auth, username, password)
-            role = Role(
+            users[user_id] = Role(
                 name=username,
-                auth_header=auth_header,
+                auth_header=_login_role(base_url, auth, username, password),
                 privilege_rank=privilege_by_role.get(str(role_name).lower(), 0),
                 metadata={
                     "username": username,
@@ -143,97 +105,77 @@ def _load_acmeflow_roles(data: Dict[str, Any], base_url: str) -> List[Role]:
                     "department": user.get("department"),
                 },
             )
-            users[user_id] = role
-            user_role[user_id] = str(role_name).lower()
-            username_to_id[username] = user_id
 
-    # Build ownership information expected by BOLA: the key is the path parameter
-    # name and the values are resource IDs belonging to this testing identity.
+    # Keep ownership resource-specific. A generic "id" bucket is intentionally avoided:
+    # AcmeFlow has /users/{id}, /expenses/{id}, /payments/{id}, and /projects/{id}, and the
+    # same numeric ID can refer to completely different objects.
     for resource_type, resources in ownership.items():
         if not isinstance(resources, list):
             continue
         for resource in resources:
             if not isinstance(resource, dict) or "id" not in resource:
                 continue
-            rid = str(resource["id"])
-            owner_id = None
 
+            owner_id = None
             if resource_type == "users":
                 owner_id = resource.get("id")
             elif resource_type == "expenses":
                 owner_id = resource.get("owner_user_id")
             elif resource_type == "payments":
                 expense_id = resource.get("expense_id")
-                expense = next(
-                    (e for e in ownership.get("expenses", [])
-                     if isinstance(e, dict) and e.get("id") == expense_id),
-                    None,
-                )
+                expense = next((e for e in ownership.get("expenses", []) if isinstance(e, dict) and e.get("id") == expense_id), None)
                 owner_id = expense.get("owner_user_id") if expense else None
             elif resource_type == "projects":
                 owner_id = resource.get("manager_id")
 
-            if owner_id is not None and int(owner_id) in users:
-                role = users[int(owner_id)]
-                role.owned_resources.setdefault("id", []).append(rid)
-                role.owned_resources.setdefault(f"{resource_type}_id", []).append(rid)
+            if owner_id is None or int(owner_id) not in users:
+                continue
+
+            role = users[int(owner_id)]
+            key = f"{str(resource_type).rstrip('s')}_id"
+            role.owned_resources.setdefault(key, []).append(str(resource["id"]))
 
     return list(users.values())
 
 
 def _load_roles(data: Dict[str, Any], base_url: str) -> List[Role]:
     raw_roles = data.get("roles", [])
-
-    # Native APIAT format: roles is a list of dictionaries with a required name.
     if isinstance(raw_roles, list):
-        roles = []
-        for r in raw_roles:
-            if not isinstance(r, dict):
-                raise TypeError("Each APIAT role must be a mapping")
-            roles.append(
-                Role(
-                    name=r["name"],
-                    auth_header=r.get("auth_header", {}),
-                    owned_resources=r.get("owned_resources", {}),
-                    privilege_rank=r.get("privilege_rank", 0),
-                    metadata=r.get("metadata", {}),
-                )
+        return [
+            Role(
+                name=r["name"],
+                auth_header=r.get("auth_header", {}),
+                owned_resources=r.get("owned_resources", {}),
+                privilege_rank=r.get("privilege_rank", 0),
+                metadata=r.get("metadata", {}),
             )
-        return roles
-
-    # AcmeFlow format: roles is a mapping of role category -> users.
+            for r in raw_roles
+        ]
     if isinstance(raw_roles, dict):
         return _load_acmeflow_roles(data, base_url)
-
     raise TypeError("'roles' must be either an APIAT role list or a role mapping")
 
 
 def _load_endpoint_requirements(data: Dict[str, Any]) -> Dict[str, List[str]]:
-    """Support APIAT's map format and AcmeFlow's endpoint list format."""
     requirements = dict(data.get("endpoint_role_requirements", {}) or {})
     endpoints = data.get("endpoints", []) or []
-
-    if isinstance(endpoints, list):
+    if isinstance(endpoints, list) and isinstance(data.get("roles"), dict):
+        role_map = data["roles"]
         for ep in endpoints:
-            if not isinstance(ep, dict):
+            if not isinstance(ep, dict) or not isinstance(ep.get("allowed_roles"), list):
                 continue
-            allowed = ep.get("allowed_roles")
-            if not allowed or not isinstance(allowed, list):
+            path, method = ep.get("path"), ep.get("method")
+            if not path or not method:
                 continue
-            path = ep.get("path")
-            method = ep.get("method")
-            if path and method:
-                # AcmeFlow uses role categories; APIAT roles are individual identities.
-                # Expand each category to the corresponding usernames.
-                role_names = []
-                for role in data.get("roles", {}).keys() if isinstance(data.get("roles"), dict) else []:
-                    role_names.extend(
-                        user.get("username")
-                        for user in data["roles"][role].get("users", [])
-                        if role in {str(x).lower() for x in allowed}
-                    )
-                requirements[f"{str(method).upper()} {path}"] = role_names
-
+            allowed = {str(x).lower() for x in ep["allowed_roles"]}
+            role_names = [
+                user.get("username")
+                for category, category_data in role_map.items()
+                if category.lower() in allowed
+                for user in category_data.get("users", [])
+                if isinstance(user, dict) and user.get("username")
+            ]
+            requirements[f"{str(method).upper()} {path}"] = role_names
     return requirements
 
 
@@ -250,31 +192,7 @@ def _load_workflows(data: Dict[str, Any]) -> List[Workflow]:
             )
             for w in raw
         ]
-
-    # AcmeFlow's state-machine workflow is richer than APIAT's simple workflow model.
-    # Do not crash loading a scan that only needs role/endpoint/BOLA information.
-    # Transition endpoints are still converted into simple one-step workflows.
-    workflows: List[Workflow] = []
-    if isinstance(raw, dict):
-        for name, definition in raw.items():
-            if not isinstance(definition, dict):
-                continue
-            steps = []
-            for i, transition in enumerate(definition.get("transitions", [])):
-                endpoint = str(transition.get("endpoint", ""))
-                parts = endpoint.split(" ", 1)
-                if len(parts) != 2:
-                    continue
-                method, path = parts
-                steps.append(WorkflowStep(name=f"transition_{i + 1}", method=method, path=path))
-            workflows.append(
-                Workflow(
-                    name=name,
-                    description="AcmeFlow state-machine workflow",
-                    steps=steps,
-                )
-            )
-    return workflows
+    return []
 
 
 def load_scan_config(path: str) -> ScanConfig:
@@ -285,7 +203,6 @@ def load_scan_config(path: str) -> ScanConfig:
     if not isinstance(data, dict):
         raise TypeError("Scan config root must be a YAML mapping")
 
-    # Native APIAT configs put base_url at the root; AcmeFlow puts it under target.
     target = data.get("target", {}) or {}
     base_url = data.get("base_url") or target.get("base_url")
     if not base_url:
@@ -294,10 +211,7 @@ def load_scan_config(path: str) -> ScanConfig:
 
     roles = _load_roles(data, base_url)
     if len(roles) < 2:
-        raise ValueError(
-            "At least two roles are required (e.g. a low-privilege and a higher-privilege "
-            "identity) to meaningfully test authorization boundaries."
-        )
+        raise ValueError("At least two roles are required (e.g. a low-privilege and a higher-privilege identity) to meaningfully test authorization boundaries.")
 
     return ScanConfig(
         base_url=base_url,
