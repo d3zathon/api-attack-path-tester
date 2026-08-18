@@ -1,54 +1,58 @@
-# API Attack-Path Tester
+# API Attack-Path Tester (APIAT)
 
-**API Attack-Path Tester (APIAT)** is an authorization-focused API security testing tool designed to identify, verify, and correlate API authorization and business-logic vulnerabilities.
+**API Attack-Path Tester (APIAT)** is an authorization-focused API security testing framework for identifying, verifying, and correlating API authorization and business-logic vulnerabilities.
 
-Instead of simply flagging suspicious HTTP responses, APIAT uses **role-based testing, ownership information, response verification, and attack-path correlation** to produce evidence-backed findings.
+The project is designed around **role-based testing, resource ownership, HTTP evidence, verification, and attack-path correlation** rather than treating every suspicious response as a confirmed vulnerability.
+
+## Author & Development
+
+**Nish (d3zathon)** is the project author and maintainer.
+
+APIAT is an independent cybersecurity research and engineering project. Development has included AI-assisted implementation, debugging, code review, test design, and documentation. See [AUTHORS.md](AUTHORS.md) for transparent human/AI attribution.
+
+The Git history, tests, issue/fix history, and repository state are the authoritative record of development.
 
 > ⚠️ **Authorization Required**
 >
-> Only use APIAT against APIs, accounts, and systems that you own or have explicit permission to test. The tool includes an explicit authorization flag and is designed for authorized security testing.
+> Only use APIAT against APIs, accounts, and systems that you own or are explicitly authorized to test. The `--yes-i-am-authorized` flag is an explicit authorization gate.
 
 ---
 
-## What Can APIAT Test?
+## What APIAT Tests
 
-APIAT focuses primarily on authorization and API business-logic weaknesses, including:
+APIAT focuses primarily on API authorization and business-logic weaknesses, including:
 
-* **BOLA** — Broken Object Level Authorization
-* **BFLA** — Broken Function Level Authorization
-* **Privilege Escalation**
-* **Parameter Tampering**
-* **Mass Assignment**
-* **Business Logic / Workflow Abuse**
-* Cross-user resource access
-* Unauthorized function access
-* Role-based authorization failures
+- **BOLA** — Broken Object Level Authorization
+- **BFLA** — Broken Function Level Authorization
+- Privilege escalation
+- Parameter tampering
+- Mass assignment
+- Business-logic and workflow abuse
+- Cross-user resource access
+- Role-based authorization failures
 
-The tool can also correlate confirmed findings into potential **attack paths**.
+Confirmed findings can also be correlated into **attack paths**.
 
-For example:
+Example:
 
 ```text
-Low-privileged User
+Low-privileged identity
         │
         ▼
-BOLA
-Access another user's resource
+      BOLA
+Cross-user object access
         │
         ▼
-Privilege Escalation
-Modify a restricted property
+Privilege-related modification
         │
         ▼
-BFLA
-Access administrative functionality
+      BFLA
+Restricted functionality
 ```
 
 ---
 
-# How APIAT Works
-
-The general workflow is:
+## Architecture
 
 ```text
 OpenAPI Specification
@@ -57,10 +61,10 @@ OpenAPI Specification
 Endpoint Discovery
         │
         ▼
-Role & Credential Configuration
+Role / Credential Configuration
         │
         ▼
-Authorization Testing
+Authorization Checks
         │
         ├── BOLA
         ├── BFLA
@@ -72,6 +76,9 @@ Authorization Testing
 Candidate Findings
         │
         ▼
+HTTP Evidence
+        │
+        ▼
 Verification
         │
         ▼
@@ -81,995 +88,284 @@ Confirmed Findings
 Attack-Path Correlation
         │
         ▼
-Security Report
+HTML / Markdown / JSON Reports
 ```
 
-APIAT is **OpenAPI-driven**. The OpenAPI specification tells the tool what endpoints and operations exist, while the role configuration tells it who is authorized to access those operations and which resources belong to which test identities.
-
----
-
-# Requirements
-
-Before using APIAT, make sure you have:
-
-* Python 3.x
-* Git
-* An OpenAPI 3.x specification for the API you want to test
-* Authorized test accounts or API tokens
-* Permission to perform security testing against the target API
-
-You should ideally have separate test identities such as:
-
-```text
-User
-Manager
-Admin
-```
-
-Do **not** use production credentials unless you have explicit authorization and understand the potential impact.
+A candidate is not automatically a vulnerability. APIAT separates candidate generation from evidence-based verification.
 
 ---
 
 # Installation
 
-APIAT provides a setup script to simplify installation and configuration.
-
-## Quick Installation
-
-Clone the repository:
+### Quick installation
 
 ```bash
 git clone https://github.com/d3zathon/api-attack-path-tester.git
 cd api-attack-path-tester
-```
-
-Make the setup script executable:
-
-```bash
 chmod +x setup.sh
-```
-
-Run the setup script:
-
-```bash
 ./setup.sh
-```
-
-The setup script handles the required project installation and environment setup.
-
-After installation, verify that APIAT is available:
-
-```bash
 apiattack --help
 ```
 
-If the command is available, the installation was successful.
-
----
-
-## If `setup.sh` Doesn't Run
-
-If you receive:
-
-```text
-Permission denied
-```
-
-run:
-
-```bash
-chmod +x setup.sh
-```
-
-and then:
-
-```bash
-./setup.sh
-```
-
-If you receive:
-
-```text
-No such file or directory
-```
-
-make sure you are running the command from the project root:
-
-```bash
-cd api-attack-path-tester
-ls
-```
-
-You should see the project files, including:
-
-```text
-setup.sh
-```
-
-Then run:
-
-```bash
-./setup.sh
-```
-
----
-
-## Manual Installation
-
-If you prefer not to use the setup script, you can install APIAT manually.
-
-Create a Python virtual environment:
+### Manual installation
 
 ```bash
 python3 -m venv .venv
-```
-
-Activate it:
-
-### Linux / macOS
-
-```bash
 source .venv/bin/activate
+pip install -e .
+apiattack --help
 ```
 
-### Windows
+Windows PowerShell:
 
 ```powershell
 .venv\Scripts\Activate.ps1
-```
-
-Install APIAT:
-
-```bash
 pip install -e .
-```
-
-Verify:
-
-```bash
-apiattack --help
 ```
 
 ---
 
-## Recommended Installation
+# Included Demo Lab
 
-For most users, use:
+APIAT includes a deliberately vulnerable local Flask lab for reproducible testing.
 
-```bash
-git clone https://github.com/d3zathon/api-attack-path-tester.git
-cd api-attack-path-tester
-chmod +x setup.sh
-./setup.sh
-apiattack --help
-```
+The bundled demo lab runs on **port 8010 by default**, keeping it separate from applications commonly running on port 8000.
 
-Once `apiattack --help` works, continue to the **Quick Start** or **Testing Your Own API** section.
-
-# Quick Start: Test the Included Lab
-
-APIAT includes a deliberately vulnerable API lab that you can use without connecting to an external API.
-
-Start the lab according to the repository's lab instructions, then run:
+Run the complete demo:
 
 ```bash
 make lab-scan
 ```
 
-The lab contains intentionally vulnerable endpoints designed to demonstrate APIAT's testing and verification capabilities.
+Stop the demo:
 
-Use the lab first if you are learning how the tool works.
+```bash
+make lab-stop
+```
+
+The demo lab contains intentionally vulnerable endpoints for BOLA, BFLA, parameter tampering, privilege escalation, and business-logic testing.
+
+**Do not expose the demo lab to an untrusted network.**
 
 ---
 
-# Testing Your Own API
+# Testing an Authorized API
 
-APIAT can also test an external API that you are authorized to assess.
+APIAT is OpenAPI-driven. The specification defines the available endpoints and operations; the role configuration defines identities, ownership, privilege boundaries, and other testing context.
 
-The recommended workflow is:
+Typical workflow:
 
 ```text
 1. Obtain OpenAPI specification
-2. Identify authorized test accounts
-3. Create role configuration
+2. Prepare authorized test identities
+3. Configure resource ownership / role expectations
 4. Inspect the specification
 5. Run the scan
-6. Review findings
-7. Review attack paths
+6. Review evidence and verification notes
+7. Review confirmed findings and attack paths
+```
+
+## Inspect the API specification
+
+```bash
+apiattack inspect-spec --spec openapi.yaml
+```
+
+## Run an authorized scan
+
+```bash
+apiattack scan \
+  --spec openapi.yaml \
+  --config roles.yaml \
+  --out ./report \
+  --yes-i-am-authorized
 ```
 
 ---
 
-# 1. Obtain an OpenAPI Specification
+# Role Configuration
 
-APIAT expects an **OpenAPI 3.x** specification.
-
-You may have a file such as:
-
-```text
-openapi.yaml
-```
-
-or:
-
-```text
-openapi.json
-```
-
-For example:
-
-```yaml
-openapi: 3.0.0
-
-info:
-  title: Example API
-  version: 1.0.0
-
-servers:
-  - url: https://api.example.com
-
-paths:
-  /users/{id}:
-    get:
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Successful response
-```
-
-You can also use an OpenAPI specification hosted by your own application.
-
-For example:
-
-```text
-https://api.example.com/openapi.json
-```
-
-Download it locally if necessary:
-
-```bash
-curl -o openapi.json https://api.example.com/openapi.json
-```
-
-Then use:
-
-```text
-openapi.json
-```
-
-with APIAT.
-
-> APIAT is not currently intended to be a general-purpose API crawler. It relies on an OpenAPI specification to understand the API's available endpoints and operations.
-
----
-
-# 2. Create the Role Configuration
-
-Generate a configuration template:
-
-```bash
-apiattack init-config --out roles.yaml
-```
-
-Open the configuration:
-
-```bash
-nano roles.yaml
-```
-
-The configuration describes the authorized test identities and authorization model.
-
-A simplified example:
+A simplified configuration looks like:
 
 ```yaml
 base_url: "https://api.example.com"
 
 roles:
-
-  user:
-    token: "${USER_TOKEN}"
-
-  manager:
-    token: "${MANAGER_TOKEN}"
-
-  admin:
-    token: "${ADMIN_TOKEN}"
-```
-
-Your actual configuration may contain additional information such as:
-
-* Owned resources
-* Privilege levels
-* Endpoint-role requirements
-* Identity markers
-* Workflow definitions
-
----
-
-# 3. Configure Resource Ownership
-
-Ownership information is especially important for testing **BOLA**.
-
-For example:
-
-```text
-User A → resource 1001
-User B → resource 1002
-```
-
-The security expectation is:
-
-```text
-User A → resource 1001    ✅
-User A → resource 1002    ❌
-```
-
-Your configuration can describe these ownership relationships.
-
-Conceptually:
-
-```yaml
-roles:
-
-  user_a:
-    token: "${USER_A_TOKEN}"
-
+  - name: user_a
+    privilege_rank: 0
+    auth_header:
+      Authorization: "Bearer <USER_A_TEST_TOKEN>"
     owned_resources:
-      id:
-        - "1001"
+      order_id: ["1001"]
 
-  user_b:
-    token: "${USER_B_TOKEN}"
-
+  - name: user_b
+    privilege_rank: 0
+    auth_header:
+      Authorization: "Bearer <USER_B_TEST_TOKEN>"
     owned_resources:
-      id:
-        - "1002"
+      order_id: ["1002"]
+
+  - name: admin
+    privilege_rank: 9
+    auth_header:
+      Authorization: "Bearer <ADMIN_TEST_TOKEN>"
 ```
 
-This allows APIAT to test whether one identity can access another identity's resources.
-
----
-
-# 4. Define Endpoint Authorization
-
-For BFLA and privilege-related testing, APIAT needs to understand which roles should have access to specific operations.
-
-For example:
-
-```yaml
-endpoint_role_requirements:
-
-  "GET /users/{id}":
-    - user
-    - manager
-    - admin
-
-  "DELETE /users/{id}":
-    - admin
-
-  "POST /admin/users":
-    - admin
-```
-
-This creates an expected authorization model:
-
-```text
-User
- ├── GET /users/{id}       ALLOWED
- ├── DELETE /users/{id}    DENIED
- └── POST /admin/users     DENIED
-
-Admin
- ├── GET /users/{id}       ALLOWED
- ├── DELETE /users/{id}    ALLOWED
- └── POST /admin/users     ALLOWED
-```
-
-APIAT can then test whether the actual API behavior matches the expected authorization policy.
-
----
-
-# 5. Use Environment Variables for Credentials
-
-Avoid hardcoding sensitive tokens into configuration files whenever possible.
-
-For example:
-
-```bash
-export USER_TOKEN="your-user-test-token"
-export MANAGER_TOKEN="your-manager-test-token"
-export ADMIN_TOKEN="your-admin-test-token"
-```
-
-Then reference them from your configuration:
-
-```yaml
-roles:
-
-  user:
-    token: "${USER_TOKEN}"
-
-  manager:
-    token: "${MANAGER_TOKEN}"
-
-  admin:
-    token: "${ADMIN_TOKEN}"
-```
-
-Never commit real credentials to Git.
-
-Add sensitive configuration files to `.gitignore` if necessary:
-
-```gitignore
-roles.yaml
-.env
-*.token
-```
-
----
-
-# 6. Inspect the OpenAPI Specification
-
-Before running a scan, inspect the specification:
-
-```bash
-apiattack inspect-spec --spec openapi.yaml
-```
-
-This allows you to verify that APIAT is seeing the endpoints you expect.
-
-For example:
-
-```text
-GET    /users/{id}
-PATCH  /users/{id}
-DELETE /users/{id}
-
-GET    /orders/{id}
-POST   /orders
-
-POST   /admin/users
-```
-
-If the endpoints are not represented correctly in the OpenAPI specification, fix the specification before testing.
-
----
-
-# 7. Run an Authorized Scan
-
-Once the API specification and role configuration are ready:
-
-```bash
-apiattack scan \
-  --spec openapi.yaml \
-  --config roles.yaml \
-  --out ./report \
-  --yes-i-am-authorized
-```
-
-The `--yes-i-am-authorized` flag is an explicit authorization gate.
-
-APIAT should only be used when you have permission to test the target.
-
----
-
-# 8. What Happens During a Scan?
-
-APIAT performs several stages.
-
-### Endpoint discovery
-
-The tool parses the OpenAPI specification and builds an inventory of API operations.
-
-### Role-based testing
-
-The tool uses the configured identities to test authorization boundaries.
-
-### Vulnerability checks
-
-Depending on the configuration and available endpoints, APIAT can test for issues such as:
-
-```text
-BOLA
-BFLA
-Privilege Escalation
-Parameter Tampering
-Mass Assignment
-Workflow Abuse
-```
-
-### Verification
-
-A suspicious response is not automatically treated as a confirmed vulnerability.
-
-APIAT attempts to verify the finding using additional evidence.
-
-Conceptually:
-
-```text
-Suspicious behavior
-        │
-        ▼
-Re-test
-        │
-        ▼
-Inspect response
-        │
-        ▼
-Check identity/resource evidence
-        │
-        ▼
-Verify impact
-        │
-        ▼
-Confirmed finding
-```
-
-This separation helps reduce false positives.
-
----
-
-# 9. Understanding BOLA Testing
-
-Suppose:
+Resource ownership is especially important for BOLA testing.
 
 ```text
 User A owns object 1001
 User B owns object 1002
+
+User A → 1001    ALLOWED
+User A → 1002    SHOULD BE BLOCKED
 ```
 
-The legitimate request is:
+APIAT uses parameter and endpoint context to avoid treating the same numeric ID as a global identifier across unrelated resource types.
 
-```http
-GET /users/1001
-Authorization: Bearer USER_A_TOKEN
-```
-
-APIAT can test whether the same identity can access:
-
-```http
-GET /users/1002
-Authorization: Bearer USER_A_TOKEN
-```
-
-If User A receives User B's protected information, the tool has evidence of a potential **Broken Object Level Authorization** vulnerability.
-
-The important distinction is:
-
-```text
-HTTP 200
-```
-
-does not automatically mean:
-
-```text
-BOLA confirmed
-```
-
-The tool needs evidence that the returned object belongs to another identity or violates the configured authorization model.
+Never commit real credentials, tokens, cookies, or production secrets.
 
 ---
 
-# 10. Understanding BFLA Testing
+# BOLA Verification
 
-BFLA occurs when a lower-privileged role can execute functionality intended for a higher-privileged role.
+A strong BOLA test compares access by two different authenticated principals to the same concrete object.
 
-For example:
-
-```text
-User:
-    GET /profile          ✅
-    DELETE /users/{id}    ❌
-
-Admin:
-    GET /profile          ✅
-    DELETE /users/{id}    ✅
-```
-
-APIAT can test whether the actual API enforces those boundaries.
-
-If:
+Conceptually:
 
 ```text
-User → DELETE /users/1002
+Owner request
+    │
+    ├── HTTP 2xx → object is accessible
+    │
+    ▼
+Cross-role request
+    │
+    ├── HTTP 401/403 → authorization boundary blocked access
+    ├── HTTP 404/422 → resource/probe problem; not automatically BOLA
+    └── HTTP 2xx → potential cross-user access
+                     │
+                     ▼
+                 Verification
+                     │
+                     ▼
+             Confirmed BOLA
 ```
 
-succeeds despite the configured policy requiring an administrator, APIAT can report the behavior for verification.
+This distinction is intentional: a `404`, `401`, or `403` should not be promoted to a vulnerability merely because the endpoint was selected as a candidate.
 
 ---
 
-# 11. Understanding Privilege Escalation
+# Reports
 
-Consider an API that allows users to update their profile:
-
-```http
-PATCH /users/1001
-```
-
-A legitimate request might contain:
-
-```json
-{
-  "name": "Alice"
-}
-```
-
-A vulnerable implementation might also accept:
-
-```json
-{
-  "name": "Alice",
-  "role": "admin"
-}
-```
-
-APIAT can test for this class of behavior where the API and configuration provide enough information to verify the resulting capability.
-
-The important part is that simply changing:
-
-```text
-role = admin
-```
-
-is not sufficient evidence.
-
-A stronger verification is:
-
-```text
-Attempt modification
-       ↓
-Check resulting state/capability
-       ↓
-Attempt privileged operation
-       ↓
-Determine whether privilege actually changed
-```
-
----
-
-# 12. Testing Business Logic
-
-Some API vulnerabilities cannot be detected from individual requests.
-
-For example, imagine:
-
-```text
-1. Create order
-2. Pay for order
-3. Confirm order
-4. Ship order
-```
-
-The API may expose:
-
-```text
-POST /orders
-POST /orders/{id}/pay
-POST /orders/{id}/confirm
-POST /orders/{id}/ship
-```
-
-If the API allows:
-
-```text
-POST /orders/123/ship
-```
-
-without completing payment, that may represent a business-logic flaw.
-
-APIAT supports workflow-oriented testing for these scenarios.
-
-A workflow can describe the expected sequence:
-
-```text
-Create
-  ↓
-Pay
-  ↓
-Confirm
-  ↓
-Ship
-```
-
-The tester can then investigate whether steps can be skipped or replayed in an unexpected way.
-
----
-
-# 13. Understanding Attack Paths
-
-Individual vulnerabilities don't always tell the complete story.
-
-For example:
-
-```text
-Finding 1
-BOLA
-   ↓
-Access another user's resource
-
-Finding 2
-Mass Assignment
-   ↓
-Modify a privileged property
-
-Finding 3
-BFLA
-   ↓
-Access administrative functionality
-```
-
-APIAT can correlate confirmed findings into an attack-path narrative:
-
-```text
-Low-privileged identity
-        ↓
-Unauthorized object access
-        ↓
-Privilege-related modification
-        ↓
-Administrative capability
-```
-
-This helps security teams understand **how vulnerabilities can combine**, rather than viewing every finding in isolation.
-
----
-
-# 14. Reports
-
-Specify an output directory:
+APIAT writes structured results to the configured output directory:
 
 ```bash
 --out ./report
 ```
 
-For example:
+Supported report formats include:
 
-```bash
-apiattack scan \
-  --spec openapi.yaml \
-  --config roles.yaml \
-  --out ./report \
-  --yes-i-am-authorized
-```
+- JSON
+- Markdown
+- HTML
 
-The generated reports can be used to review:
-
-* Vulnerability findings
-* Verification status
-* Evidence
-* Requests/responses
-* Affected endpoints
-* Roles
-* Attack paths
-
-APIAT supports structured output formats such as JSON, Markdown, and HTML.
+Reports include findings, verification status, evidence, affected endpoints, tested roles, and attack paths.
 
 ---
 
-# External API Example
+# Demo Lab vs. Your Own API
 
-A complete external API workflow might look like:
-
-```bash
-# Clone the project
-git clone https://github.com/d3zathon/api-attack-path-tester.git
-
-cd api-attack-path-tester
-
-# Create environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install
-pip install -e .
-
-# Create configuration
-apiattack init-config --out roles.yaml
-
-# Inspect API specification
-apiattack inspect-spec --spec openapi.yaml
-
-# Run authorized security test
-apiattack scan \
-  --spec openapi.yaml \
-  --config roles.yaml \
-  --out ./report \
-  --yes-i-am-authorized
-```
-
----
-
-# Example Project Layout
-
-A practical setup could look like:
+The repository contains two separate workflows:
 
 ```text
-my-api-security-test/
-│
-├── openapi.yaml
-├── roles.yaml
-├── .env
-│
-└── report/
-    ├── report.html
-    ├── report.md
-    └── report.json
+Bundled VulnAPI demo  → localhost:8010
+Your own authorized API → whatever target URL you configure
 ```
 
-Keep credentials and other sensitive information out of source control.
+This separation prevents the demo lab from accidentally sending `/login` requests or scan traffic to another application already using port 8000.
 
 ---
 
 # Troubleshooting
 
-## APIAT command not found
+### `apiattack: command not found`
 
-Make sure the virtual environment is activated:
+Activate the virtual environment and reinstall:
 
 ```bash
 source .venv/bin/activate
-```
-
-Then reinstall:
-
-```bash
 pip install -e .
 ```
 
-Verify:
+### Demo lab reports a login/route error
+
+Make sure the demo lab is using its dedicated port and that no stale lab process is running:
 
 ```bash
-apiattack --help
+make lab-stop
+rm -f .lab.pid lab.log
+make lab-scan
 ```
 
----
+### Scan produces many candidates but no confirmed findings
 
-## OpenAPI specification cannot be parsed
-
-Check that the document is valid OpenAPI 3.x YAML or JSON.
-
-You can also inspect it using:
-
-```bash
-apiattack inspect-spec --spec openapi.yaml
-```
-
----
-
-## No vulnerabilities are found
-
-A clean result does **not** necessarily mean the API is completely secure.
-
-Check:
-
-* Are the correct test accounts configured?
-* Are ownership relationships correct?
-* Are endpoint-role requirements defined?
-* Are the test accounts actually different privilege levels?
-* Does the OpenAPI specification accurately describe the API?
-* Are workflows configured where business logic needs to be tested?
-
-APIAT is intentionally focused on the authorization model and information available through the specification/configuration. It cannot infer every application-specific security rule automatically.
-
----
-
-# Security & Authorization
-
-APIAT is intended for:
-
-* Your own applications
-* Local development environments
-* Security testing labs
-* Authorized penetration tests
-* Bug bounty programs where the target and testing method are explicitly permitted
-* Internal security assessments
-
-Do **not** use the tool against systems without authorization.
-
-Because APIAT can perform state-changing operations, testing an API can potentially modify or delete data.
-
-Use dedicated test accounts and test environments whenever possible.
-
----
-
-# Limitations
-
-APIAT is not a universal API security scanner.
-
-It currently relies heavily on:
-
-1. A valid OpenAPI specification
-2. Correct role configuration
-3. Authorized credentials
-4. Accurate resource ownership information
-5. Explicit authorization expectations
-6. Workflow definitions for application-specific business logic
-
-If the authorization model is incorrectly configured, the tool may produce inaccurate results.
-
-APIAT also does not guarantee detection of every API vulnerability.
-
-Its primary focus is **authorization testing, verification, and attack-path correlation**.
-
----
-
-# Recommended Testing Environment
-
-For learning and development, use:
+Inspect the HTTP evidence and verification notes. In particular, distinguish:
 
 ```text
-                    Your Computer
-                         │
-                         ▼
-                  API Attack-Path
-                      Tester
-                         │
-                         ▼
-                 Vulnerable API
-                    Test Lab
-                         │
-                  ┌──────┼──────┐
-                  ▼      ▼      ▼
-                User  Manager  Admin
+401 → authentication problem
+403 → authorization blocked
+404 → resource/fixture mismatch or wrong identifier
+422 → invalid request / probe construction problem
+2xx → successful application response requiring verification
 ```
 
-Use dedicated test data and credentials.
+### Credentials or IDs appear inconsistent
 
-This makes it possible to safely experiment with:
-
-* BOLA
-* BFLA
-* Privilege escalation
-* Mass assignment
-* Parameter tampering
-* Workflow abuse
-* Attack-path correlation
+For deterministic lab fixtures, restart/reset the lab environment rather than modifying APIAT to ignore incorrect target state.
 
 ---
 
-# Why APIAT?
+# Development
 
-Traditional API testing can produce a large number of individual findings.
+The repository contains tests and a deliberately vulnerable local lab so authorization behavior can be reproduced during development.
 
-APIAT focuses on a narrower but important question:
-
-> **Can a specific role perform an action or access a resource that it should not be able to access?**
-
-The tool then attempts to verify the behavior and determine whether confirmed vulnerabilities can be chained into a meaningful attack path.
-
-The core philosophy is:
+When extending a check, preserve this model:
 
 ```text
-Don't just detect.
-        ↓
-Verify.
-        ↓
-Correlate.
-        ↓
-Explain the attack path.
+Candidate
+   ↓
+Evidence
+   ↓
+Verification
+   ↓
+Confirmed finding
 ```
 
----
-
-# Disclaimer
-
-API Attack-Path Tester is a security research and authorized testing tool.
-
-The developers and contributors are not responsible for unauthorized use, damage, data loss, service disruption, or other consequences resulting from misuse of the software.
-
-Always obtain appropriate authorization before testing an API.
+False positives are a design concern: HTTP status codes alone are not sufficient proof of every vulnerability class.
 
 ---
 
-## Project
+# Security Disclaimer
 
-**GitHub:** https://github.com/d3zathon/api-attack-path-tester
+APIAT is intended for authorized security testing and controlled research environments only.
 
-**Author:** d3zathon
+Do not scan third-party systems without explicit permission.
 
-If you find a bug or want to contribute improvements, open an issue or pull request in the repository.
+The included laboratory applications are deliberately vulnerable and should remain isolated from untrusted networks.
+
+---
+
+# Author
+
+**Nish (d3zathon)**
+
+API Attack-Path Tester is independently developed and maintained by Nish.
+
+For transparent human/AI development attribution, see [AUTHORS.md](AUTHORS.md).
+
+---
+
+# License
+
+See the repository license file for the applicable terms.
