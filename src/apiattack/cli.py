@@ -10,7 +10,7 @@ from rich.table import Table
 
 from .checks import ALL_CHECKS
 from .config.loader import load_scan_config
-from .engine.runner import run_scan
+from .engine.runner import TargetIdentityMismatch, run_scan
 from .reporting.report import result_to_dict, write_html, write_json, write_markdown
 from .spec_parser import parse_spec, summarize
 
@@ -68,7 +68,19 @@ def scan(
     def progress(msg: str):
         console.print(f"[dim]... {msg}[/dim]")
 
-    result = run_scan(spec, scan_config, check_names=check_names, progress_cb=progress)
+    try:
+        result = run_scan(spec, scan_config, check_names=check_names, progress_cb=progress)
+    except TargetIdentityMismatch as exc:
+        console.print(f"[bold red]Target identity error:[/bold red] {exc}")
+        console.print(
+            "[yellow]The scan was stopped because the target credentials and resource "
+            "ownership map do not describe the same identities. Reset/reseed the lab target "
+            "or update the config before scanning.[/yellow]"
+        )
+        raise typer.Exit(code=2)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[bold red]Scan error:[/bold red] {exc}")
+        raise typer.Exit(code=1)
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     fmt_list = [f.strip() for f in formats.split(",")]
