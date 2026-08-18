@@ -21,11 +21,15 @@ def _normalize(name: str) -> str:
 
 
 def _singularize(resource: str) -> str:
+    """Conservatively singularize common REST collection names."""
     resource = _normalize(resource).strip("/")
     if resource.endswith("ies") and len(resource) > 3:
         return resource[:-3] + "y"
     if resource.endswith("ses") and len(resource) > 3:
-        # expenses -> expense, but addresses/statuses -> address/status.
+        # addresses -> address; statuses -> status.
+        if resource[:-2].endswith(("ss", "us")):
+            return resource[:-2]
+        # expenses/responses/purchases -> expense/response/purchase.
         if resource[:-1].endswith("se"):
             return resource[:-1]
         return resource[:-2]
