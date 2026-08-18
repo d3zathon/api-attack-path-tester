@@ -1,17 +1,4 @@
-"""Verification layer.
-
-Check modules deliberately over-flag: any cross-role 2xx is a *candidate*. This module's
-job is to separate real, evidenced vulnerabilities from noise (flaky endpoints, generic
-200-with-empty-body responses, endpoints that are genuinely public, etc.) before anything
-reaches the report. A finding leaves this module in one of three states:
-
-  - dropped entirely (not returned) - re-test showed the behavior doesn't reproduce, or the
-    response does not actually indicate unauthorized access/mutation.
-  - confidence="unverified" - plausible but could not be independently corroborated
-    (kept in the report but clearly labeled, not counted as "confirmed").
-  - confidence="verified" / "verified-high-confidence" and confirmed=True - reproduced and
-    corroborated by response content, not status code alone.
-"""
+"""Verification layer for APIAT findings."""
 from __future__ import annotations
 
 import re
@@ -59,36 +46,47 @@ class Verifier:
             return self._verify_business_logic(f)
         return f
 
-    # -- individual verification strategies -------------------------------------------------
-
     def _verify_bola(self, f: Finding) -> Optional[Finding]:
-        attack_ev = f.evidence[-1] if f.evidence else None
-        if attack_ev is None:
+        if len(f.evidence) < 2:
+            return None
+
+        owner_ev = f.evidence[0]
+        attack_ev = f.evidence[1]
+
+        # A BOLA requires an object that the legitimate owner can access and a
+        # successful cross-principal access by the attacker. Status codes are the
+        # first gate; content is a second signal rather than a substitute for it.
+        if owner_ev.status_code >= 300:
+            return None
+        if attack_ev.status_code >= 300:
             return None
 
         body = attack_ev.response_body_excerpt or ""
         if not body.strip() or body.strip() in ("{}", "[]", "null"):
             f.confidence = "unverified"
             f.verification_notes.append(
-                "Attacker response body was empty - status code alone is not strong "
-                "enough evidence of data disclosure; kept as unverified."
+                "Attacker received a successful status, but the response body was empty; "
+                "status code alone was insufficient to confirm object disclosure."
             )
             f.confirmed = False
             return f
         if ERRORISH_MARKERS.search(body):
-            # server returned 2xx but body reads like an error/soft-block -> drop
             return None
 
         actor = self._role(f.actor_role)
-        stable = True
         if actor:
-            # re-issue to confirm reproducibility rather than a one-off race/flake
             resp2, ev2 = self.client.request(
-                attack_ev.method, _path_from_url(attack_ev.url, self.client.base_url),
-                role=actor, description=f"Verification re-check for {f.id}",
+                attack_ev.method,
+                _path_from_url(attack_ev.url, self.client.base_url),
+                role=actor,
+                description=f"Verification re-check for {f.id}",
             )
             f.evidence.append(ev2)
-            stable = resp2.status_code == attack_ev.status_code
+            if resp2.status_code >= 300 or resp2.status_code != attack_ev.status_code:
+                f.confidence = "unverified"
+                f.verification_notes.append("Successful cross-role access did not reproduce on re-test.")
+                f.confirmed = False
+                return f
 
         victim = self._role(f.victim_role) if f.victim_role else None
         marker_hit = False
@@ -96,37 +94,26 @@ class Verifier:
             markers = victim.metadata.get("identity_markers", [])
             marker_hit = any(m and m in body for m in markers)
 
-        if not stable:
-            f.confidence = "unverified"
-            f.verification_notes.append("Result did not reproduce on re-test.")
-            f.confirmed = False
-            return f
-
+        f.confirmed = True
         if marker_hit:
             f.confidence = "verified-high-confidence"
-            f.confirmed = True
             f.verification_notes.append(
-                "Response body contained an identity marker belonging to the victim role, "
-                "directly confirming cross-account data disclosure."
+                "Cross-role access reproduced and the response contained a configured victim identity marker."
             )
         else:
             f.confidence = "verified"
-            f.confirmed = True
             f.verification_notes.append(
-                "Result reproduced consistently and the response body was non-empty and "
-                "non-error-shaped; no explicit victim identity marker configured to confirm "
-                "content further."
+                "Cross-role access reproduced with successful, non-empty, non-error-shaped response content."
             )
         return f
 
     def _verify_bfla(self, f: Finding) -> Optional[Finding]:
         ev = f.evidence[-1] if f.evidence else None
-        if ev is None:
+        if ev is None or ev.status_code >= 300:
             return None
         body = ev.response_body_excerpt or ""
         if ERRORISH_MARKERS.search(body):
             return None
-
         actor = self._role(f.actor_role)
         if actor:
             resp2, ev2 = self.client.request(
@@ -134,77 +121,49 @@ class Verifier:
                 role=actor, description=f"Verification re-check for {f.id}",
             )
             f.evidence.append(ev2)
-            if resp2.status_code != ev.status_code:
+            if resp2.status_code != ev.status_code or resp2.status_code >= 300:
                 f.confidence = "unverified"
-                f.verification_notes.append("Result did not reproduce on re-test.")
                 f.confirmed = False
+                f.verification_notes.append("Result did not reproduce on re-test.")
                 return f
-
         f.confidence = "verified"
         f.confirmed = True
-        f.verification_notes.append(
-            "Restricted endpoint reproducibly returned a success status to an "
-            "unauthorized role, with a response body that does not read as an error."
-        )
+        f.verification_notes.append("Restricted endpoint reproducibly returned success to an unauthorized role.")
         return f
 
     def _verify_privesc(self, f: Finding) -> Optional[Finding]:
         if len(f.evidence) >= 2:
             follow_up = f.evidence[-1]
-            if follow_up.status_code < 300 and not ERRORISH_MARKERS.search(
-                follow_up.response_body_excerpt or ""
-            ):
+            if follow_up.status_code < 300 and not ERRORISH_MARKERS.search(follow_up.response_body_excerpt or ""):
                 f.confidence = "verified-high-confidence"
                 f.confirmed = True
-                f.verification_notes.append(
-                    "Escalation was confirmed by directly observing a subsequent "
-                    "restricted-endpoint call succeed after the privilege field was set."
-                )
+                f.verification_notes.append("Privilege escalation was confirmed by a subsequent restricted-endpoint call.")
                 return f
         f.confidence = "unverified"
         f.confirmed = False
-        f.verification_notes.append(
-            "Privileged field was accepted, but no independent restricted-endpoint call "
-            "confirmed an actual capability change; kept as unverified rather than confirmed."
-        )
+        f.verification_notes.append("Privileged field was accepted but capability change was not independently confirmed.")
         return f
 
     def _verify_param_tampering(self, f: Finding) -> Optional[Finding]:
         ev = f.evidence[-1] if f.evidence else None
-        if ev is None:
+        if ev is None or ev.status_code >= 300:
             return None
         body = ev.response_body_excerpt or ""
-        # crude but effective: does the response echo back the tampered value?
         tampered_values = [str(v) for v in (ev.request_body or {}).values()]
         echoed = any(v and v in body for v in tampered_values)
-
-        if echoed:
-            f.confidence = "verified"
-            f.confirmed = True
-            f.verification_notes.append(
-                "The tampered value was echoed back in the response, indicating the "
-                "server accepted and likely persisted the client-supplied value."
-            )
-        else:
-            f.confidence = "unverified"
-            f.confirmed = False
-            f.verification_notes.append(
-                "Request was accepted (2xx) but the tampered value was not observable "
-                "in the response; could not independently confirm server-side effect "
-                "without a read-back endpoint. Recommend manual confirmation."
-            )
+        f.confirmed = echoed
+        f.confidence = "verified" if echoed else "unverified"
+        f.verification_notes.append(
+            "Tampered value was observed in the response."
+            if echoed else
+            "Request was accepted but the tampered value was not observable in the response."
+        )
         return f
 
     def _verify_business_logic(self, f: Finding) -> Optional[Finding]:
-        # The check module already requires the abusive sequence to fully succeed
-        # end-to-end, which is itself strong evidence; we mark these verified but not
-        # "high confidence" since there's no independent second signal.
         f.confidence = "verified"
         f.confirmed = True
-        f.verification_notes.append(
-            "Confirmed by directly executing the abusive workflow sequence and "
-            "observing it complete successfully."
-        )
+        f.verification_notes.append("Confirmed by executing the abusive workflow sequence successfully.")
         return f
 
 
