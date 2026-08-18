@@ -1,14 +1,8 @@
-"""Map OpenAPI path parameters to configured resource ownership IDs.
-
-A generic ``{id}`` is never treated as globally unique: the same value can identify
-unrelated resources. Resolution uses the parameter name first and the REST collection
-immediately preceding the parameter second, so nested routes such as
-``/expenses/{id}/approve`` still resolve to ``expense_id``.
-"""
+"""Map OpenAPI path parameters to configured resource ownership IDs."""
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Tuple
 
 from ..models import Role
 
@@ -26,10 +20,8 @@ def _singularize(resource: str) -> str:
     if resource.endswith("ies") and len(resource) > 3:
         return resource[:-3] + "y"
     if resource.endswith("ses") and len(resource) > 3:
-        # addresses -> address; statuses -> status.
         if resource[:-2].endswith(("ss", "us")):
             return resource[:-2]
-        # expenses/responses/purchases -> expense/response/purchase.
         if resource[:-1].endswith("se"):
             return resource[:-1]
         return resource[:-2]
@@ -42,7 +34,6 @@ def _resource_candidates(param_name: str, endpoint_path: str | None = None) -> L
     """Return ownership-key candidates from most to least specific."""
     target = _normalize(param_name)
     candidates: List[str] = []
-
     if target != "id":
         candidates.append(target)
 
@@ -56,7 +47,6 @@ def _resource_candidates(param_name: str, endpoint_path: str | None = None) -> L
         except StopIteration:
             param_index = -1
 
-        # /expenses/{id}/approve -> expense_id, not approve_id.
         if param_index > 0:
             resource = segments[param_index - 1]
             if not resource.startswith("{"):
@@ -79,18 +69,35 @@ def pick_two_roles_with_resource(
     roles: List[Role],
     param_name: str,
     endpoint_path: str | None = None,
-):
-    """Find owner/attacker/resource triples with disjoint ownership."""
-    triples = []
+    max_attackers_per_resource: int = 2,
+) -> List[Tuple[Role, Role, str]]:
+    """Return representative owner/attacker/resource triples.
+
+    Exhaustively pairing every role against every owned object creates a large number of
+    redundant requests. For BOLA, one or two attackers per resource are normally enough:
+    the lowest-privilege non-owner establishes the horizontal boundary, while a second
+    attacker can exercise a different privilege boundary when available. The admin role
+    is skipped when it is the globally highest-privileged identity because administrative
+    access is generally expected to bypass object ownership controls.
+    """
+    triples: List[Tuple[Role, Role, str]] = []
+    max_rank = max((r.privilege_rank for r in roles), default=0)
+
     for owner in roles:
         owned = owned_ids_for_param(owner, param_name, endpoint_path)
         if not owned:
             continue
-        for other in roles:
-            if other.name == owner.name:
-                continue
-            other_owned = set(owned_ids_for_param(other, param_name, endpoint_path))
-            for resource_id in owned:
-                if resource_id not in other_owned:
-                    triples.append((owner, other, resource_id))
+
+        for resource_id in owned:
+            candidates = [
+                other for other in roles
+                if other.name != owner.name
+                and other.privilege_rank < max_rank
+                and str(resource_id) not in set(owned_ids_for_param(other, param_name, endpoint_path))
+            ]
+            candidates.sort(key=lambda r: (r.privilege_rank, r.name))
+
+            for attacker in candidates[:max_attackers_per_resource]:
+                triples.append((owner, attacker, resource_id))
+
     return triples
