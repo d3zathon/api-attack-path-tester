@@ -4,7 +4,8 @@
 VENV_PY := .venv/bin/python
 VENV_PIP := .venv/bin/pip
 LAB_PID_FILE := .lab.pid
-LAB_URL := http://localhost:8000
+LAB_URL := http://localhost:8010
+LAB_PORT := 8010
 
 .PHONY: help setup lab lab-stop lab-scan scan test test-cov docker-demo clean
 
@@ -27,7 +28,7 @@ lab:
 		echo "Lab already running (pid $$(cat $(LAB_PID_FILE)))."; \
 	else \
 		echo "Starting lab on $(LAB_URL) ..."; \
-		( cd lab; ../$(VENV_PY) app.py > ../lab.log 2>&1 & echo $$! > ../$(LAB_PID_FILE) ); \
+		( cd lab; PORT=$(LAB_PORT) ../$(VENV_PY) app.py > ../lab.log 2>&1 & echo $$! > ../$(LAB_PID_FILE) ); \
 		sleep 1; \
 		for i in 1 2 3 4 5 6 7 8 9 10; do \
 			curl -sf $(LAB_URL)/health > /dev/null && break; \
@@ -63,15 +64,11 @@ test:
 	$(VENV_PY) -m pytest -q
 
 test-cov:
-	$(VENV_PY) -m pytest --cov=apiattack -q
+	$(VENV_PY) -m pytest --cov=src/apiattack --cov-report=term-missing -q
 
 docker-demo:
-	docker compose build
-	./scripts/run_demo.sh
+	docker compose -f docker-compose.demo.yml up --build
 
 clean:
-	$(MAKE) lab-stop || true
-	rm -rf .venv .pytest_cache report demo-report lab.log examples/roles_lab.yaml
-	find . -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	find . -name "*.pyc" -delete
-	@echo "Cleaned."
+	rm -rf .venv .pytest_cache .coverage htmlcov report
+	rm -f .lab.pid lab.log examples/roles_lab.yaml
