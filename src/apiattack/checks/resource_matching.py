@@ -25,6 +25,9 @@ def _singularize(resource: str) -> str:
     if resource.endswith("ies") and len(resource) > 3:
         return resource[:-3] + "y"
     if resource.endswith("ses") and len(resource) > 3:
+        # expenses -> expense, but addresses/statuses -> address/status.
+        if resource[:-1].endswith("se"):
+            return resource[:-1]
         return resource[:-2]
     if resource.endswith("s") and not resource.endswith("ss"):
         return resource[:-1]
