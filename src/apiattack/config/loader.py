@@ -132,6 +132,9 @@ def _load_acmeflow_roles(data: Dict[str, Any], base_url: str) -> List[Role]:
                 continue
 
             role = users[int(owner_id)]
+            # OpenAPI uses singular parameters such as {expense_id}; keep the
+            # ownership key aligned with that schema rather than producing
+            # plural keys such as expenses_id.
             key = f"{str(resource_type).rstrip('s')}_id"
             role.owned_resources.setdefault(key, []).append(str(resource["id"]))
 
