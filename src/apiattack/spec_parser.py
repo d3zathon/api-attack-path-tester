@@ -1,4 +1,11 @@
-"""Parses an OpenAPI 3.x spec into normalized Endpoint objects."""
+"""Parses OpenAPI 3.x documents into normalized endpoint models.
+
+The parser intentionally treats every path-template parameter as object-bearing for
+authorization analysis. Restricting this to names ending in ``id``/``uuid`` misses
+real-world APIs that use names such as ``accountNumber``, ``username`` or ``slug``.
+The BOLA check then uses endpoint context plus the configured ownership map to decide
+whether a parameter identifies a testable resource.
+"""
 from __future__ import annotations
 
 import json
@@ -13,7 +20,6 @@ import yaml
 from .models import Endpoint
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
-_ID_PARAM_RE = re.compile(r"(id|uuid|key|slug)$", re.IGNORECASE)
 _PATH_PARAM_RE = re.compile(r"\{([^{}]+)\}")
 
 
@@ -37,7 +43,10 @@ def _load_raw(source: str) -> Dict[str, Any]:
     try:
         if text_stripped.startswith("{"):
             return json.loads(text)
-        return yaml.safe_load(text)
+        parsed_yaml = yaml.safe_load(text)
+        if not isinstance(parsed_yaml, dict):
+            raise TypeError("OpenAPI document root must be a mapping")
+        return parsed_yaml
     except Exception as exc:  # noqa: BLE001
         raise SpecParseError(f"Failed to parse OpenAPI spec as JSON/YAML: {exc}") from exc
 
@@ -53,23 +62,35 @@ def _resolve_ref(root: Dict[str, Any], ref: str) -> Dict[str, Any]:
 
 def _extract_request_body_schema(root: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
     body = op.get("requestBody", {})
-    if "$ref" in body:
+    if isinstance(body, dict) and "$ref" in body:
         body = _resolve_ref(root, body["$ref"])
-    content = body.get("content", {})
-    json_content = content.get("application/json", {})
-    schema = json_content.get("schema", {})
-    if "$ref" in schema:
+    if not isinstance(body, dict):
+        return {}
+
+    content = body.get("content", {}) or {}
+    # Prefer JSON but accept common vendor media types such as application/*+json.
+    media = content.get("application/json")
+    if not isinstance(media, dict):
+        media = next(
+            (value for key, value in content.items()
+             if isinstance(key, str) and (key.endswith("+json") or key == "application/*")
+             and isinstance(value, dict)),
+            {},
+        )
+    schema = media.get("schema", {}) if isinstance(media, dict) else {}
+    if isinstance(schema, dict) and "$ref" in schema:
         schema = _resolve_ref(root, schema["$ref"])
-    return schema or {}
+    return schema if isinstance(schema, dict) else {}
 
 
-def _extract_path_params(root: Dict[str, Any], path: str, path_item: Dict[str, Any], op: Dict[str, Any]) -> List[str]:
-    """Extract path parameters from OpenAPI metadata, with a template-path fallback.
+def _extract_path_params(
+    root: Dict[str, Any], path: str, path_item: Dict[str, Any], op: Dict[str, Any]
+) -> List[str]:
+    """Extract path parameters from OpenAPI metadata plus the URI template.
 
-    A valid path template such as ``/expenses/{expense_id}`` is enough to identify the
-    parameter even when a hand-authored/local OpenAPI document omitted the corresponding
-    ``parameters`` entry. This keeps authorization checks from silently skipping an
-    otherwise testable endpoint.
+    The template fallback is important for locally generated or hand-authored specs
+    that omit the redundant ``parameters`` declaration. Parameter names are preserved
+    exactly because they are also used when substituting concrete resource IDs.
     """
     names: List[str] = []
     all_params = list(path_item.get("parameters", []) or []) + list(op.get("parameters", []) or [])
@@ -80,9 +101,10 @@ def _extract_path_params(root: Dict[str, Any], path: str, path_item: Dict[str, A
         if "$ref" in param:
             param = _resolve_ref(root, param["$ref"])
         if param.get("in") == "path" and param.get("name"):
-            names.append(str(param["name"]))
+            name = str(param["name"])
+            if name not in names:
+                names.append(name)
 
-    # Fallback: infer names directly from {param} path-template segments.
     for name in _PATH_PARAM_RE.findall(path):
         if name not in names:
             names.append(name)
@@ -91,37 +113,37 @@ def _extract_path_params(root: Dict[str, Any], path: str, path_item: Dict[str, A
 
 
 def parse_spec(source: str) -> List[Endpoint]:
-    """Parse an OpenAPI spec into a flat list of Endpoint objects."""
+    """Parse an OpenAPI document into a flat list of endpoint objects."""
     root = _load_raw(source)
-    if not root or "paths" not in root:
-        raise SpecParseError("Spec has no 'paths' section - is this a valid OpenAPI document?")
+    paths = root.get("paths") if isinstance(root, dict) else None
+    if not isinstance(paths, dict):
+        raise SpecParseError("Spec has no valid 'paths' section - is this an OpenAPI document?")
 
     endpoints: List[Endpoint] = []
-
-    for path, path_item in root.get("paths", {}).items():
+    for path, path_item in paths.items():
         if not isinstance(path_item, dict):
             continue
-
         for method, op in path_item.items():
             if method.lower() not in HTTP_METHODS or not isinstance(op, dict):
                 continue
 
-            path_params = _extract_path_params(root, path, path_item, op)
-            required_roles = op.get("x-required-roles")
-
-            ep = Endpoint(
-                path=path,
-                method=method.upper(),
-                operation_id=op.get("operationId"),
-                tags=op.get("tags", []),
-                path_params=path_params,
-                request_body_schema=_extract_request_body_schema(root, op) or None,
-                required_roles=required_roles,
-                is_id_bearing=any(_ID_PARAM_RE.search(p or "") for p in path_params),
-                raw=op,
+            path_params = _extract_path_params(root, str(path), path_item, op)
+            endpoints.append(
+                Endpoint(
+                    path=str(path),
+                    method=method.upper(),
+                    operation_id=op.get("operationId"),
+                    tags=op.get("tags", []),
+                    path_params=path_params,
+                    request_body_schema=_extract_request_body_schema(root, op) or None,
+                    required_roles=op.get("x-required-roles"),
+                    # Object-level authorization is not limited to IDs. Any path
+                    # parameter can select an object and must therefore be eligible
+                    # for BOLA analysis when ownership data can resolve it.
+                    is_id_bearing=bool(path_params),
+                    raw=op,
+                )
             )
-            endpoints.append(ep)
-
     return endpoints
 
 
