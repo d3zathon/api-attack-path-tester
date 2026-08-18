@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
 from typing import List, Optional
 
 from ..attack_path.graph import build_attack_paths
 from ..checks import ALL_CHECKS
 from ..config.loader import ScanConfig
-from ..models import Endpoint, ScanResult
+from ..models import Endpoint, ScanResult, VulnClass
 from ..spec_parser import parse_spec
 from ..verification.verifier import Verifier
 from .http_client import HttpClient
@@ -18,6 +19,26 @@ def _in_scope(ep: Endpoint, config: ScanConfig) -> bool:
     if config.scope_include:
         return any(ep.path.startswith(p) for p in config.scope_include)
     return True
+
+
+def _bola_diagnostics(candidates, verified) -> tuple[str, str]:
+    """Return compact status/reason diagnostics so verifier failures are actionable."""
+    pairs = Counter()
+    reasons = Counter()
+    for f in candidates:
+        if f.vuln_class != VulnClass.BOLA or len(f.evidence) < 2:
+            continue
+        pairs[(f.evidence[0].status_code, f.evidence[1].status_code)] += 1
+        if f.verification_notes:
+            reasons[f.verification_notes[-1]] += 1
+    pair_text = ", ".join(
+        f"owner={owner}/attacker={attacker}: {count}"
+        for (owner, attacker), count in sorted(pairs.items())
+    ) or "none"
+    reason_text = "; ".join(
+        f"{reason} ({count})" for reason, count in reasons.most_common(3)
+    ) or "none"
+    return pair_text, reason_text
 
 
 def run_scan(
@@ -63,6 +84,12 @@ def run_scan(
             f"Verification complete: {len(verified)} finding(s) retained, "
             f"{len(result.confirmed_findings)} confirmed"
         )
+        bola_candidates = [f for f in candidates if f.vuln_class == VulnClass.BOLA]
+        if bola_candidates:
+            pairs, reasons = _bola_diagnostics(bola_candidates, verified)
+            progress_cb(f"BOLA HTTP evidence: {pairs}")
+            if not result.confirmed_findings:
+                progress_cb(f"BOLA verification reasons: {reasons}")
         progress_cb("Building attack paths from confirmed findings...")
     result.attack_paths = build_attack_paths(verified)
 
